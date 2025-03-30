@@ -1,0 +1,21 @@
+<!-- problems/templates/profile.html -->
+{% extends 'base.html' %}
+{% block content %}
+    <h1>{{ user.username }}'s Profile</h1>
+    <p>Username: {{ user.username }}</p>
+    <p>Email: {{ user.email|default:"Not provided" }}</p>
+    <h2>Your Solutions</h2>
+    {% if solutions %}
+        <ul>
+        {% for solution in solutions %}
+            <li>
+                <a href="{% url 'problem_detail' solution.problem.id %}">{{ solution.problem.title }}</a>
+                <pre>{{ solution.code }}</pre>
+                <p>Submitted on: {{ solution.created_at }}</p>
+            </li>
+        {% endfor %}
+        </ul>
+    {% else %}
+        <p>You haven't submitted any solutions yet.</p>
+    {% endif %}
+{% endblock %}

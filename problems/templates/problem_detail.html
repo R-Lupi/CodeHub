@@ -1,0 +1,30 @@
+<!-- problems/templates/problem_detail.html -->
+{% extends 'base.html' %}
+{% block content %}
+    <h1>{{ problem.title }}</h1>
+    <p>{{ problem.description }}</p>
+    <p>Difficulty: {{ problem.difficulty }}</p>
+    <a href="{% url 'submit_solution' problem.id %}">Submit Solution</a>
+
+    {% if user_solution %}
+        <h3>Your Previous Solution</h3>
+        <pre>{{ user_solution.code }}</pre>
+        <p>Submitted on: {{ user_solution.created_at }}</p>
+        <a href="{% url 'submit_solution' problem.id %}">Edit Solution</a>
+    {% endif %}
+
+    <h2>All Solutions</h2>
+    {% if all_solutions %}
+        <ul>
+        {% for solution in all_solutions %}
+            <li>
+                <strong>{{ solution.created_by.username }}</strong>
+                <pre>{{ solution.code }}</pre>
+                <p>Submitted on: {{ solution.created_at }}</p>
+            </li>
+        {% endfor %}
+        </ul>
+    {% else %}
+        <p>No solutions have been submitted for this problem yet.</p>
+    {% endif %}
+{% endblock %}

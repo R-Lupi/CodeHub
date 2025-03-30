@@ -1,0 +1,13 @@
+<h1>{{ problem.title }}</h1>
+<h3>Your Code:</h3>
+<pre>{{ code }}</pre>
+<h3>Test Results:</h3>
+<ul>
+{% for result in results %}
+    <li>
+        Input: {{ result.input }} | Expected: {{ result.expected }} | Got: {{ result.actual }}
+        {% if result.passed %}✅ Passed{% else %}❌ Failed{% endif %}
+        {% if result.error %}{{ result.error }}{% endif %}
+    </li>
+{% endfor %}
+</ul>

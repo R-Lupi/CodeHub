@@ -1,0 +1,231 @@
+{% extends 'base.html' %}
+{% load template_tags %}
+{% load json_tags %}
+{% block content %}
+<h2>Create Problem</h2>
+<form method="post">
+    {% csrf_token %}
+    
+    <!-- Problem title and description -->
+    <h3>Problem Details</h3>
+    {% if not header_generated %}
+        {{ problem_form.title.label_tag }} {{ problem_form.title }}
+        {{ problem_form.description.label_tag }} {{ problem_form.description }}
+    {% else %}
+        <p><strong>{{ problem_form.title.label }}:</strong> {{ problem_form.title.value }}</p>
+        <p><strong>{{ problem_form.description.label }}:</strong> {{ problem_form.description.value }}</p>
+        <input type="hidden" name="title" value="{{ problem_form.title.value }}">
+        <input type="hidden" name="description" value="{{ problem_form.description.value }}">
+    {% endif %}
+    
+    <!-- Difficulty -->
+    <h3>Difficulty</h3>
+    {% if not header_generated %}
+        <label for="difficulty">Select Difficulty:</label>
+        <select name="difficulty" id="difficulty">
+            <option value="easy" {% if problem_form.difficulty.value == 'easy' %}selected{% endif %}>Easy</option>
+            <option value="medium" {% if problem_form.difficulty.value == 'medium' %}selected{% endif %}>Medium</option>
+            <option value="hard" {% if problem_form.difficulty.value == 'hard' %}selected{% endif %}>Hard</option>
+        </select>
+    {% else %}
+        <p><strong>Difficulty:</strong> {{ problem_form.difficulty.value }}</p>
+        <input type="hidden" name="difficulty" value="{{ problem_form.difficulty.value }}">
+    {% endif %}
+
+    <!-- Function Parameters -->
+    <h3>Function Parameters</h3>
+    <div id="input-vars">
+        {% if not header_generated %}
+            {% for var in input_vars %}
+            <div class="input-var">
+                <input type="text" name="input_name_{{ forloop.counter0 }}" value="{{ var.name }}" placeholder="Parameter name">
+                <select name="input_type_{{ forloop.counter0 }}">
+                    <option value="int" {% if var.type == 'int' %}selected{% endif %}>int</option>
+                    <option value="str" {% if var.type == 'str' %}selected{% endif %}>str</option>
+                    <option value="float" {% if var.type == 'float' %}selected{% endif %}>float</option>
+                    <option value="bool" {% if var.type == 'bool' %}selected{% endif %}>bool</option>
+                    <option value="list" {% if var.type == 'list' %}selected{% endif %}>list</option>
+                    <option value="dict" {% if var.type == 'dict' %}selected{% endif %}>dict</option>
+                </select>
+            </div>
+            {% empty %}
+            <div class="input-var">
+                <input type="text" name="input_name_0" placeholder="Parameter name">
+                <select name="input_type_0">
+                    <option value="int">int</option>
+                    <option value="str">str</option>
+                    <option value="float">float</option>
+                    <option value="bool">bool</option>
+                    <option value="list">list</option>
+                    <option value="dict">dict</option>
+                </select>
+            </div>
+            {% endfor %}
+        {% else %}
+            {% for var in input_vars %}
+            <div class="input-var">
+                <span>{{ var.name }}: {{ var.type }}</span>
+            </div>
+            {% endfor %}
+        {% endif %}
+    </div>
+    <input type="hidden" name="input_count" id="input_count" value="{{ input_vars|length|default:1 }}">
+    
+    <label for="return_type">Return Type:</label>
+    {% if not header_generated %}
+        <select name="return_type" id="return_type">
+            <option value="int" {% if return_type == 'int' %}selected{% endif %}>int</option>
+            <option value="str" {% if return_type == 'str' %}selected{% endif %}>str</option>
+            <option value="float" {% if return_type == 'float' %}selected{% endif %}>float</option>
+            <option value="bool" {% if return_type == 'bool' %}selected{% endif %}>bool</option>
+            <option value="list" {% if return_type == 'list' %}selected{% endif %}>list</option>
+            <option value="dict" {% if return_type == 'dict' %}selected{% endif %}>dict</option>
+            <option value="None" {% if return_type == 'None' %}selected{% endif %}>None</option>
+        </select>
+    {% else %}
+        <span>{{ return_type }}</span>
+        <input type="hidden" name="return_type" value="{{ return_type }}">
+    {% endif %}
+    
+    {% if not header_generated %}
+        <!-- Initial state: Only show generate header button -->
+        <button type="submit" name="generate_header">Generate Function Header</button>
+    {% else %}
+        <!-- After header generated: Show remaining form fields -->
+        <h3>Generated Function Header:</h3>
+        <pre>{{ function_header }}</pre>
+        
+        <h3>Solution Code</h3>
+        <pre>{{ function_header }}</pre>
+        {{ problem_form.solution_code.label_tag }}
+        <textarea name="solution_code" rows="10" cols="50">{{ solution_code|default:"" }}</textarea>
+        
+        <h3>Test Cases</h3>
+        {{ test_case_formset.management_form }}
+        <div id="test-cases">
+            {% if test_case_data %}
+                {% for test_case in test_case_data %}
+                <div class="test-case" data-index="{{ forloop.counter0 }}">
+                    {% for var in input_vars %}
+                    <label>{{ var.name }} ({{ var.type }}):</label>
+                    <input type="text" name="form-{{ forloop.parentloop.counter0 }}-param_{{ var.name }}"
+                           value="{{ test_case.inputs|get_item:var.name }}">
+                    {% endfor %}
+                    <label>Expected Return Value ({{ return_type }}):</label>
+                    <input type="text" name="form-{{ forloop.counter0 }}-expected_output"
+                           value="{{ test_case.expected_output }}">
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="test-case" data-index="0">
+                    {% for var in input_vars %}
+                    <label>{{ var.name }} ({{ var.type }}):</label>
+                    <input type="text" name="form-0-param_{{ var.name }}" value="">
+                    {% endfor %}
+                    <label>Expected Return Value ({{ return_type }}):</label>
+                    <input type="text" name="form-0-expected_output" value="">
+                </div>
+            {% endif %}
+        </div>
+        <button type="button" onclick="addTestCase()">Add Test Case</button>
+        
+        <!-- Hidden field to persist input_vars -->
+        <input type="hidden" name="input_vars" value='{{ input_vars|json_dumps|safe }}'>
+        
+        <button type="submit" name="run">Run Code</button>
+        <button type="submit" name="save">Save Problem</button>
+        
+        <!-- Always show Test Results section -->
+        <h3>Test Results:</h3>
+        {% if results %}
+            {% for result in results %}
+                <div class="result">
+                    <p><strong>Input:</strong> {{ result.input|default:"N/A" }}</p>
+                    <p><strong>Expected:</strong> {{ result.expected|default:"N/A" }}</p>
+                    <p><strong>Actual:</strong> {{ result.actual|default:"N/A" }}</p>
+                    <p><strong>Passed:</strong> {{ result.passed|default:"N/A" }}</p>
+                    <p><strong>Logs:</strong> <pre>{{ result.console_logs|default:"No logs" }}</pre></p>
+                    {% if result.error %}
+                        <p><strong>Error:</strong> {{ result.error }}</p>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        {% else %}
+            <p>No results available.</p>
+        {% endif %}
+    {% endif %}
+</form>
+
+<!-- JavaScript for first stage (parameters) -->
+{% if not header_generated %}
+<script>
+    let inputCount = {{ input_vars|length|default:1 }};
+    function addInputVar() {
+        const div = document.createElement('div');
+        div.className = 'input-var';
+        div.innerHTML = `
+            <input type="text" name="input_name_${inputCount}" placeholder="Parameter name">
+            <select name="input_type_${inputCount}">
+                <option value="int">int</option>
+                <option value="str">str</option>
+                <option value="float">float</option>
+                <option value="bool">bool</option>
+                <option value="list">list</option>
+                <option value="dict">dict</option>
+            </select>
+        `;
+        document.getElementById('input-vars').appendChild(div);
+        inputCount++;
+        document.getElementById('input_count').value = inputCount;
+    }
+</script>
+<button type="button" onclick="addInputVar()">Add Parameter</button>
+{% endif %}
+
+<!-- JavaScript for second stage (test cases) -->
+{% if header_generated %}
+<script>
+    let testCaseCount = {{ test_case_data|length|default:1 }};
+    function addTestCase() {
+        const div = document.createElement('div');
+        div.className = 'test-case';
+        div.setAttribute('data-index', testCaseCount);
+        div.innerHTML = `
+            {% for var in input_vars %}
+            <label>{{ var.name }} ({{ var.type }}):</label>
+            <input type="text" name="form-${testCaseCount}-param_{{ var.name }}" value="">
+            {% endfor %}
+            <label>Expected Return Value ({{ return_type }}):</label>
+            <input type="text" name="form-${testCaseCount}-expected_output" value="">
+        `;
+        document.getElementById('test-cases').appendChild(div);
+        testCaseCount++;
+        document.getElementById('form-TOTAL_FORMS').value = testCaseCount;
+    }
+</script>
+{% endif %}
+
+<style>
+    .input-var, .test-case {
+        margin-bottom: 10px;
+    }
+    .input-var input[type="text"], .input-var select, .test-case input[type="text"] {
+        margin-right: 10px;
+        margin-bottom: 5px;
+    }
+    .test-case {
+        border: 1px solid #ccc;
+        padding: 10px;
+    }
+    .result {
+        border: 1px solid #ddd;
+        padding: 10px;
+        margin-bottom: 10px;
+    }
+    pre {
+        background-color: #f5f5f5;
+        padding: 10px;
+        border-radius: 5px;
+    }
+</style>
+{% endblock %}

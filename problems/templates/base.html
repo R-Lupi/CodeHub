@@ -1,0 +1,24 @@
+<!-- problems/templates/base.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LeetCode Forum</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        {% if user.is_authenticated %}
+            <p>Welcome, {{ user.username }} | 
+               <a href="{% url 'problem_list' %}">Home</a> |
+               <a href="{% url 'profile' %}">Profile</a> | 
+               <a href="{% url 'logout' %}">Logout</a></p>
+        {% else %}
+            <p><a href="{% url 'login' %}">Login</a> | <a href="{% url 'signup' %}">Signup</a></p>
+        {% endif %}
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>

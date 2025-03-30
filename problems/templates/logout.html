@@ -1,0 +1,11 @@
+<!-- problems/templates/logout.html -->
+{% extends 'base.html' %}
+{% block content %}
+    <h1>Log Out</h1>
+    <p>Are you sure you want to log out?</p>
+    <form method="POST" action="{% url 'logout' %}">
+        {% csrf_token %}
+        <button type="submit">Yes, Log Out</button>
+        <a href="{% url 'problem_list' %}">Cancel</a>
+    </form>
+{% endblock %}

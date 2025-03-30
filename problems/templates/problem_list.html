@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block content %}
+    <h1>Problems</h1>
+    {% if user.is_authenticated %}
+        <p><a href="{% url 'create_problem' %}" style="display: inline-block; padding: 10px 20px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px;">Create Problem</a></p>
+    {% endif %}
+    <form method="GET">
+        <input type="text" name="q" placeholder="Search..." value="{{ request.GET.q }}">
+        <button type="submit">Search</button>
+    </form>
+    <h3>Filter by Tag:</h3>
+    <ul>
+        {% for tag in tags %}
+            <li><a href="?tag={{ tag.name }}">{{ tag.name }}</a></li>
+        {% endfor %}
+    </ul>
+    <ul>
+        {% for problem in problems %}
+            <li>
+                <a href="{% url 'problem_detail' problem.id %}">{{ problem.title }}</a> 
+                ({{ problem.difficulty }}) - Created by {{ problem.created_by.username }} on {{ problem.created_at|date:"Y-m-d" }}
+            </li>
+        {% endfor %}
+    </ul>
+{% endblock %}

@@ -1,0 +1,35 @@
+<!-- problems/templates/submit_solution.html -->
+{% extends 'base.html' %}
+{% block content %}
+    <h1>{% if code %}Edit{% else %}Submit{% endif %} Solution for {{ problem.title }}</h1>
+    <p>Function Header: <pre>{{ function_header }}</pre></p>
+    <form method="POST">
+        {% csrf_token %}
+        <textarea name="code" rows="10" cols="50">{{ code|default:'' }}</textarea>
+        <button type="submit" name="run">Run</button>
+        <button type="submit" name="submit">Submit</button>
+    </form>
+    {% if results %}
+        <h3>Test Results:</h3>
+        <ul>
+        {% for result in results %}
+            <li>
+                Input: {{ result.input }} | Expected: {{ result.expected }} | Got: {{ result.actual }}
+                {% if result.passed %}✅ Passed{% else %}❌ Failed{% endif %}
+                {% if result.error %}{{ result.error }}{% endif %}
+            </li>
+        {% endfor %}
+        </ul>
+        <h3>Console Log:</h3>
+        <pre style="background-color: #f5f5f5; padding: 10px; border: 1px solid #ddd; max-height: 200px; overflow-y: auto;">
+{% for result in results %}
+{{ result.console_logs }}{% if not forloop.last %}
+
+---{% endif %}
+{% endfor %}
+        </pre>
+        {% if error %}
+            <p style="color: red;">{{ error }}</p>
+        {% endif %}
+    {% endif %}
+{% endblock %}
