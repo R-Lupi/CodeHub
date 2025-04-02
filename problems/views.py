@@ -11,7 +11,6 @@ from django.contrib.auth.decorators import login_required
 from .models import Problem, Tag, Solution, TestCase
 from .forms import ProblemForm, TestCaseFormSet
 
-# Docker-based code execution
 def run_code_in_docker(code, test_cases, input_vars, language='python'):
     results = []
     if platform.system() == 'Windows':
@@ -26,14 +25,14 @@ def run_code_in_docker(code, test_cases, input_vars, language='python'):
         'str': str,
         'bool': lambda x: x.lower() == 'true',
         'list': json.loads,
-        'dict': json.loads
+        'dict': json.loads,
+        'None': lambda x: None  # Handle None explicitly
     }
 
     for test_case in test_cases:
         input_json = test_case.input_value
         expected_output = test_case.expected_output
 
-        # Convert input values to expected types
         input_dict = json.loads(input_json)
         for var in input_vars:
             if var['name'] in input_dict:
@@ -41,7 +40,7 @@ def run_code_in_docker(code, test_cases, input_vars, language='python'):
                 try:
                     input_dict[var['name']] = converter(input_dict[var['name']])
                 except (ValueError, json.JSONDecodeError):
-                    input_dict[var['name']] = input_dict[var['name']]  # Keep as is if conversion fails
+                    input_dict[var['name']] = input_dict[var['name']]
 
         wrapper_code = f"""
 import json
@@ -79,22 +78,38 @@ print("RESULT_SEPARATOR:" + json.dumps(result))
                 else:
                     console_logs.append(line)
 
-            # Parse actual output as JSON to match expected format
             try:
                 actual_output = json.loads(actual_output_raw)
             except json.JSONDecodeError:
-                actual_output = actual_output_raw  # Fallback to raw if not JSON
+                actual_output = actual_output_raw
 
             console_logs_str = "\n".join(console_logs).strip() if console_logs else "No console output"
             print(f"Container logs:\n{logs}")
 
-            # Compare parsed actual with expected (both as JSON strings)
-            expected_parsed = json.loads(expected_output)
+            expected_parsed = json.loads(expected_output) if expected_output.startswith('"') else expected_output
+            return_type = test_case.__dict__.get('return_type', 'str')
+            converter = type_converters.get(return_type, str)
+            try:
+                if return_type == 'None':
+                    expected_parsed = None if expected_output == 'null' else expected_output
+                    actual_output = None if actual_output is None else actual_output
+                elif return_type in ['int', 'float', 'bool']:
+                    actual_output = converter(actual_output)
+                    expected_parsed = converter(expected_parsed)
+                elif return_type == 'str':
+                    actual_output = str(actual_output)
+                    expected_parsed = str(expected_parsed)
+            except (ValueError, TypeError):
+                pass
+
+            passed = actual_output == expected_parsed
+            print(f"Debug: actual_output={actual_output} (type={type(actual_output)}), expected_parsed={expected_parsed} (type={type(expected_parsed)}), passed={passed}, return_type={return_type}")
+
             results.append({
                 'input': input_json,
                 'expected': expected_output,
                 'actual': actual_output_raw,
-                'passed': actual_output == expected_parsed,
+                'passed': passed,
                 'console_logs': console_logs_str
             })
         except docker.errors.ContainerError as e:
@@ -106,13 +121,11 @@ print("RESULT_SEPARATOR:" + json.dumps(result))
 
     return results
 
-# Generate function header from input variables and return type
 def generate_function_header(input_vars, return_type):
     """Generate a function header from input variables and return type"""
     params = [f"{var['name']}: {var['type']}" for var in input_vars if var['name'] and var['type']]
     return f"def solution({', '.join(params)}) -> {return_type}:\n    pass"
 
-# Signup view
 def signup(request):
     if request.method == 'POST':
         form = UserCreationForm(request.POST)
@@ -124,7 +137,6 @@ def signup(request):
         form = UserCreationForm()
     return render(request, 'signup.html', {'form': form})
 
-# Problem list view
 def problem_list(request):
     tag = request.GET.get('tag')
     query = request.GET.get('q')
@@ -136,7 +148,6 @@ def problem_list(request):
     tags = Tag.objects.all()
     return render(request, 'problem_list.html', {'problems': problems, 'tags': tags})
 
-# Problem detail view with all solutions
 def problem_detail(request, problem_id):
     problem = Problem.objects.get(id=problem_id)
     user_solution = None
@@ -152,18 +163,25 @@ def problem_detail(request, problem_id):
         'return_type': problem.return_type
     })
 
-# Create problem view with two-step process
 @login_required
 def create_problem(request):
     if request.method == 'POST':
+        print(f"Full POST data: {request.POST}")
         if 'generate_header' in request.POST:
             problem_form = ProblemForm(request.POST)
             input_vars = []
-            for i in range(int(request.POST.get('input_count', 0))):
-                name = request.POST.get(f'input_name_{i}')
-                var_type = request.POST.get(f'input_type_{i}')
+            i = 0
+            while True:
+                name_key = f'input_name_{i}'
+                type_key = f'input_type_{i}'
+                name = request.POST.get(name_key)
+                var_type = request.POST.get(type_key)
+                print(f"Checking {name_key}: {name}, {type_key}: {var_type}")
+                if name is None and var_type is None:
+                    break
                 if name and var_type:
                     input_vars.append({'name': name, 'type': var_type})
+                i += 1
             return_type = request.POST.get('return_type', 'None')
             function_header = generate_function_header(input_vars, return_type)
             
@@ -197,7 +215,6 @@ def create_problem(request):
 
             print(f"POST data: {request.POST}")
 
-            # Process all test cases
             test_cases = []
             test_case_data = []
             total_forms = int(request.POST.get('form-TOTAL_FORMS', 0))
@@ -206,37 +223,38 @@ def create_problem(request):
             for i in range(max_index + 1):
                 input_dict = {}
                 test_case_input = {}
-                for var in input_vars:
-                    key = f'form-{i}-param_{var["name"]}'
-                    value = request.POST.get(key, '')
-                    print(f"Checking {key}: {value}")
-                    if value:
-                        input_dict[var['name']] = value
-                        test_case_input[var['name']] = value
-                expected_key = f'form-{i}-expected_output'
-                expected_output = request.POST.get(expected_key, '')
-                print(f"Checking {expected_key}: {expected_output}")
-                if input_dict and expected_output:
-                    test_cases.append(type('TestCase', (), {
-                        'input_value': json.dumps(input_dict),
-                        'expected_output': json.dumps(expected_output)
-                    }))
-                    test_case_data.append({
-                        'inputs': test_case_input,
-                        'expected_output': expected_output
-                    })
+                param_values = request.POST.getlist(f'form-{i}-param_{input_vars[0]["name"]}')
+                expected_values = request.POST.getlist(f'form-{i}-expected_output')
+                print(f"Test case {i} - param_values: {param_values}, expected_values: {expected_values}")
+                if param_values and expected_values:
+                    for param, expected in zip(param_values, expected_values):
+                        if param and expected:
+                            input_dict[input_vars[0]['name']] = param
+                            test_case_input[input_vars[0]['name']] = param
+                            test_cases.append(type('TestCase', (), {
+                                'input_value': json.dumps(input_dict),
+                                'expected_output': json.dumps(expected) if return_type != 'None' else expected,
+                                'return_type': return_type
+                            }))
+                            test_case_data.append({
+                                'inputs': test_case_input.copy(),
+                                'expected_output': expected
+                            })
             print(f"Test cases: {test_cases}")
             print(f"Test case data: {test_case_data}")
 
             if problem_form.is_valid():
+                solution_code = problem_form.cleaned_data['solution_code']
+                full_function_header = generate_function_header(input_vars, return_type)
+                if not solution_code.strip().startswith('def solution'):
+                    solution_code = full_function_header.replace('pass', '') + solution_code
+
                 if 'run' in request.POST:
-                    solution_code = problem_form.cleaned_data['solution_code']
-                    full_function_header = generate_function_header(input_vars, return_type)
-                    if not solution_code.strip().startswith('def solution'):
-                        solution_code = full_function_header.replace('pass', '') + solution_code
                     print(f"Solution code: {solution_code}")
                     results = run_code_in_docker(solution_code, test_cases, input_vars)
-                    print(f"Results from run_code_in_docker: {results}")
+                    all_tests_passed = all(result.get('passed', False) for result in results) and len(results) == len(test_cases)
+                    request.session['last_run_results'] = results
+                    print(f"Results from run_code_in_docker: {results}, all_tests_passed: {all_tests_passed}")
                     return render(request, 'create_problem.html', {
                         'problem_form': problem_form,
                         'test_case_formset': test_case_formset,
@@ -246,26 +264,48 @@ def create_problem(request):
                         'return_type': return_type,
                         'function_header': function_header,
                         'header_generated': True,
-                        'test_case_data': test_case_data
+                        'test_case_data': test_case_data,
+                        'all_tests_passed': all_tests_passed
                     })
                 elif 'save' in request.POST:
-                    print("Attempting to save problem")
-                    problem = problem_form.save(commit=False)
-                    problem.created_by = request.user
-                    problem.input_vars = input_vars
-                    problem.return_type = return_type
-                    problem.function_header = function_header
-                    problem.solution_code = problem_form.cleaned_data['solution_code']  # Save creator's solution
-                    problem.save()
-                    
-                    for test_case in test_cases:
-                        TestCase.objects.create(
-                            problem=problem,
-                            input_value=test_case.input_value,
-                            expected_output=test_case.expected_output
-                        )
-                    print(f"Problem saved with ID: {problem.id}")
-                    return redirect('problem_detail', problem_id=problem.id)
+                    print(f"Re-running tests before save with solution code: {solution_code}")
+                    results = run_code_in_docker(solution_code, test_cases, input_vars)
+                    all_tests_passed = all(result.get('passed', False) for result in results) and len(results) == len(test_cases)
+                    if all_tests_passed:
+                        print("Attempting to save problem")
+                        problem = problem_form.save(commit=False)
+                        problem.created_by = request.user
+                        problem.input_vars = input_vars
+                        problem.return_type = return_type
+                        problem.function_header = function_header
+                        problem.solution_code = solution_code
+                        problem.save()
+                        
+                        for test_case in test_cases:
+                            TestCase.objects.create(
+                                problem=problem,
+                                input_value=test_case.input_value,
+                                expected_output=test_case.expected_output
+                            )
+                        print(f"Problem saved with ID: {problem.id}")
+                        if 'last_run_results' in request.session:
+                            del request.session['last_run_results']
+                        return redirect('problem_detail', problem_id=problem.id)
+                    else:
+                        print("Cannot save: Not all tests passed with current test cases")
+                        return render(request, 'create_problem.html', {
+                            'problem_form': problem_form,
+                            'test_case_formset': test_case_formset,
+                            'results': results,
+                            'solution_code': solution_code,
+                            'input_vars': input_vars,
+                            'return_type': return_type,
+                            'function_header': function_header,
+                            'header_generated': True,
+                            'test_case_data': test_case_data,
+                            'all_tests_passed': False,
+                            'error': 'All test cases must pass with the current configuration before submitting.'
+                        })
             print("Form errors:", problem_form.errors, test_case_formset.errors)
             return render(request, 'create_problem.html', {
                 'problem_form': problem_form,
@@ -278,6 +318,8 @@ def create_problem(request):
                 'error': 'Please correct the errors in the form.'
             })
     else:
+        if 'last_run_results' in request.session:
+            del request.session['last_run_results']
         problem_form = ProblemForm()
         return render(request, 'create_problem.html', {
             'problem_form': problem_form,
@@ -286,7 +328,6 @@ def create_problem(request):
             'header_generated': False
         })
 
-# Submit solution view with edit functionality
 @login_required
 def submit_solution(request, problem_id):
     problem = Problem.objects.get(id=problem_id)
@@ -298,6 +339,8 @@ def submit_solution(request, problem_id):
     if request.method == 'POST':
         code = request.POST.get('code')
         if 'run' in request.POST:
+            for tc in test_cases:
+                tc.return_type = problem.return_type
             results = run_code_in_docker(code, test_cases)
             return render(request, 'submit_solution.html', {
                 'problem': problem,
@@ -308,6 +351,8 @@ def submit_solution(request, problem_id):
                 'return_type': problem.return_type
             })
         elif 'submit' in request.POST:
+            for tc in test_cases:
+                tc.return_type = problem.return_type
             results = run_code_in_docker(code, test_cases)
             if all(result.get('passed', False) for result in results):
                 if user_solution:

@@ -3,7 +3,7 @@
 {% load json_tags %}
 {% block content %}
 <h2>Create Problem</h2>
-<form method="post">
+<form method="post" id="problem-form">
     {% csrf_token %}
     
     <!-- Problem title and description -->
@@ -37,7 +37,7 @@
     <div id="input-vars">
         {% if not header_generated %}
             {% for var in input_vars %}
-            <div class="input-var">
+            <div class="input-var" data-index="{{ forloop.counter0 }}">
                 <input type="text" name="input_name_{{ forloop.counter0 }}" value="{{ var.name }}" placeholder="Parameter name">
                 <select name="input_type_{{ forloop.counter0 }}">
                     <option value="int" {% if var.type == 'int' %}selected{% endif %}>int</option>
@@ -47,9 +47,10 @@
                     <option value="list" {% if var.type == 'list' %}selected{% endif %}>list</option>
                     <option value="dict" {% if var.type == 'dict' %}selected{% endif %}>dict</option>
                 </select>
+                <button type="button" class="remove-var" onclick="removeInputVar(this)">Remove</button>
             </div>
             {% empty %}
-            <div class="input-var">
+            <div class="input-var" data-index="0">
                 <input type="text" name="input_name_0" placeholder="Parameter name">
                 <select name="input_type_0">
                     <option value="int">int</option>
@@ -59,6 +60,7 @@
                     <option value="list">list</option>
                     <option value="dict">dict</option>
                 </select>
+                <button type="button" class="remove-var" onclick="removeInputVar(this)">Remove</button>
             </div>
             {% endfor %}
         {% else %}
@@ -114,6 +116,7 @@
                     <label>Expected Return Value ({{ return_type }}):</label>
                     <input type="text" name="form-{{ forloop.counter0 }}-expected_output"
                            value="{{ test_case.expected_output }}">
+                    <button type="button" class="remove-test" onclick="removeTestCase(this)">Remove</button>
                 </div>
                 {% endfor %}
             {% else %}
@@ -124,6 +127,7 @@
                     {% endfor %}
                     <label>Expected Return Value ({{ return_type }}):</label>
                     <input type="text" name="form-0-expected_output" value="">
+                    <button type="button" class="remove-test" onclick="removeTestCase(this)">Remove</button>
                 </div>
             {% endif %}
         </div>
@@ -133,9 +137,9 @@
         <input type="hidden" name="input_vars" value='{{ input_vars|json_dumps|safe }}'>
         
         <button type="submit" name="run">Run Code</button>
-        <button type="submit" name="save">Save Problem</button>
+        <button type="submit" name="save" id="submit-problem" {% if not all_tests_passed %}disabled{% endif %}>Submit Problem</button>
         
-        <!-- Always show Test Results section -->
+        <!-- Test Results section with styled output -->
         <h3>Test Results:</h3>
         {% if results %}
             {% for result in results %}
@@ -143,7 +147,13 @@
                     <p><strong>Input:</strong> {{ result.input|default:"N/A" }}</p>
                     <p><strong>Expected:</strong> {{ result.expected|default:"N/A" }}</p>
                     <p><strong>Actual:</strong> {{ result.actual|default:"N/A" }}</p>
-                    <p><strong>Passed:</strong> {{ result.passed|default:"N/A" }}</p>
+                    <p><strong>Result:</strong> 
+                        {% if result.passed %}
+                            <span class="pass">Passed ✓</span>
+                        {% else %}
+                            <span class="fail">Failed ✗</span>
+                        {% endif %}
+                    </p>
                     <p><strong>Logs:</strong> <pre>{{ result.console_logs|default:"No logs" }}</pre></p>
                     {% if result.error %}
                         <p><strong>Error:</strong> {{ result.error }}</p>
@@ -158,11 +168,13 @@
 
 <!-- JavaScript for first stage (parameters) -->
 {% if not header_generated %}
+<button type="button" onclick="addInputVar()">Add Parameter</button>
 <script>
     let inputCount = {{ input_vars|length|default:1 }};
     function addInputVar() {
         const div = document.createElement('div');
         div.className = 'input-var';
+        div.setAttribute('data-index', inputCount);
         div.innerHTML = `
             <input type="text" name="input_name_${inputCount}" placeholder="Parameter name">
             <select name="input_type_${inputCount}">
@@ -173,16 +185,46 @@
                 <option value="list">list</option>
                 <option value="dict">dict</option>
             </select>
+            <button type="button" class="remove-var" onclick="removeInputVar(this)">Remove</button>
         `;
         document.getElementById('input-vars').appendChild(div);
         inputCount++;
         document.getElementById('input_count').value = inputCount;
+        console.log('Added parameter, inputCount:', inputCount);
     }
+
+    function removeInputVar(button) {
+        const inputVars = document.querySelectorAll('.input-var');
+        if (inputVars.length > 1) {
+            const removedDiv = button.parentElement;
+            removedDiv.remove();
+            inputCount--;
+            document.getElementById('input_count').value = inputCount;
+            const remainingVars = document.querySelectorAll('.input-var');
+            remainingVars.forEach((div, index) => {
+                div.setAttribute('data-index', index);
+                const input = div.querySelector('input');
+                const select = div.querySelector('select');
+                input.name = `input_name_${index}`;
+                select.name = `input_type_${index}`;
+            });
+            console.log('After removal:', Array.from(remainingVars).map(div => ({
+                name: div.querySelector('input').value,
+                type: div.querySelector('select').value
+            })));
+        } else {
+            alert("You must have at least one parameter.");
+        }
+    }
+
+    document.getElementById('problem-form').addEventListener('submit', function(e) {
+        const formData = new FormData(this);
+        console.log('Form data on submit:', Object.fromEntries(formData.entries()));
+    });
 </script>
-<button type="button" onclick="addInputVar()">Add Parameter</button>
 {% endif %}
 
-<!-- JavaScript for second stage (test cases) -->
+<!-- JavaScript for second stage (test cases and submit button control) -->
 {% if header_generated %}
 <script>
     let testCaseCount = {{ test_case_data|length|default:1 }};
@@ -197,11 +239,56 @@
             {% endfor %}
             <label>Expected Return Value ({{ return_type }}):</label>
             <input type="text" name="form-${testCaseCount}-expected_output" value="">
+            <button type="button" class="remove-test" onclick="removeTestCase(this)">Remove</button>
         `;
         document.getElementById('test-cases').appendChild(div);
         testCaseCount++;
         document.getElementById('form-TOTAL_FORMS').value = testCaseCount;
+        updateSubmitButton();
+        console.log('Added test case, testCaseCount:', testCaseCount);
     }
+
+    function removeTestCase(button) {
+        const testCases = document.querySelectorAll('.test-case');
+        if (testCases.length > 1) {
+            button.parentElement.remove();
+            testCaseCount--;
+            document.getElementById('form-TOTAL_FORMS').value = testCaseCount;
+            const remainingTests = document.querySelectorAll('.test-case');
+            remainingTests.forEach((div, index) => {
+                div.setAttribute('data-index', index);
+                div.querySelectorAll('input').forEach(input => {
+                    const nameParts = input.name.split('-');
+                    input.name = `form-${index}-${nameParts[2]}`;
+                });
+            });
+            updateSubmitButton();
+            console.log('After test case removal:', Array.from(remainingTests).map(div => ({
+                param: div.querySelector('input[name^="form-"][name$="-param_"]').value,
+                expected: div.querySelector('input[name$="-expected_output"]').value
+            })));
+        } else {
+            alert("You must have at least one test case.");
+        }
+    }
+
+    function updateSubmitButton() {
+        const results = document.querySelectorAll('.result');
+        const submitButton = document.getElementById('submit-problem');
+        const testCases = document.querySelectorAll('.test-case');
+        
+        if (results.length === 0 || results.length !== testCases.length) {
+            submitButton.disabled = true;
+            return;
+        }
+
+        const allPassed = Array.from(results).every(result => 
+            result.querySelector('.pass') !== null
+        );
+        submitButton.disabled = !allPassed;
+    }
+
+    document.addEventListener('DOMContentLoaded', updateSubmitButton);
 </script>
 {% endif %}
 
@@ -226,6 +313,23 @@
         background-color: #f5f5f5;
         padding: 10px;
         border-radius: 5px;
+    }
+    .pass {
+        color: green;
+        font-weight: bold;
+    }
+    .fail {
+        color: red;
+        font-weight: bold;
+    }
+    #submit-problem:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+    }
+    .remove-var, .remove-test {
+        margin-left: 10px;
+        color: red;
+        cursor: pointer;
     }
 </style>
 {% endblock %}
