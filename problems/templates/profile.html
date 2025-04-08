@@ -1,21 +1,23 @@
-<!-- problems/templates/profile.html -->
 {% extends 'base.html' %}
 {% block content %}
-    <h1>{{ user.username }}'s Profile</h1>
-    <p>Username: {{ user.username }}</p>
-    <p>Email: {{ user.email|default:"Not provided" }}</p>
-    <h2>Your Solutions</h2>
-    {% if solutions %}
-        <ul>
-        {% for solution in solutions %}
-            <li>
-                <a href="{% url 'problem_detail' solution.problem.id %}">{{ solution.problem.title }}</a>
-                <pre>{{ solution.code }}</pre>
-                <p>Submitted on: {{ solution.created_at }}</p>
-            </li>
-        {% endfor %}
-        </ul>
-    {% else %}
-        <p>You haven't submitted any solutions yet.</p>
-    {% endif %}
+    <h2>{{ user.username }}'s Profile</h2>
+    <p><strong>Problems Created:</strong> {{ problems_created }}</p>
+    <p><strong>Problems Solved:</strong> {{ problems_solved }}</p>
+
+    <h3>Favorite Problems</h3>
+    <ul>
+    {% for fav in favorite_problems %}
+        <li><a href="{% url 'problem_detail' fav.problem.id %}">{{ fav.problem.title }}</a></li>
+    {% empty %}
+        <li>No favorite problems yet.</li>
+    {% endfor %}
+    </ul>
+
+    <h3>Solutions</h3>
+    {% for solution in solutions %}
+        <p><strong>{{ solution.problem.title }}</strong> ({{ solution.created_at }}):</p>
+        <pre>{{ solution.code }}</pre>
+    {% empty %}
+        <p>No solutions submitted yet.</p>
+    {% endfor %}
 {% endblock %}

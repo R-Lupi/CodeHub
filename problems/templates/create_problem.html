@@ -32,6 +32,40 @@
         <input type="hidden" name="difficulty" value="{{ problem_form.difficulty.value }}">
     {% endif %}
 
+    <!-- Tags -->
+    <h3>Tags</h3>
+    {% if not header_generated %}
+        <div class="tags-container">
+            <div class="tag-section">
+                <label for="tags">Select or Add Tags:</label>
+                <select name="tags" id="tags" multiple>
+                    {% for tag in all_tags %}
+                        <option value="{{ tag.name }}" {% if tag.name in selected_tags %}selected{% endif %}>{{ tag.name }}</option>
+                    {% endfor %}
+                </select>
+                <div class="new-tags-input-wrapper">
+                    <input type="text" id="new_tags_input" placeholder="e.g., math, logic">
+                    <button type="button" onclick="addNewTags()">Add</button>
+                </div>
+                <input type="hidden" name="new_tags" id="new_tags" value="{{ new_tags|join:',' }}">
+            </div>
+        </div>
+    {% else %}
+        <p><strong>Tags:</strong>
+            {% for tag in selected_tags %}
+                {{ tag }}{% if not forloop.last %}, {% endif %}
+            {% endfor %}
+            {% if selected_tags and new_tags %}, {% endif %}
+            {% for tag in new_tags %}
+                {{ tag }}{% if not forloop.last %}, {% endif %}
+            {% endfor %}
+        </p>
+        {% for tag in selected_tags %}
+            <input type="hidden" name="tags" value="{{ tag }}">
+        {% endfor %}
+        <input type="hidden" name="new_tags" value="{{ new_tags|join:',' }}">
+    {% endif %}
+
     <!-- Function Parameters -->
     <h3>Function Parameters</h3>
     <div id="input-vars">
@@ -90,17 +124,11 @@
     {% endif %}
     
     {% if not header_generated %}
-        <!-- Initial state: Only show generate header button -->
         <button type="submit" name="generate_header">Generate Function Header</button>
     {% else %}
-        <!-- After header generated: Show remaining form fields -->
-        <h3>Generated Function Header:</h3>
-        <pre>{{ function_header }}</pre>
-        
         <h3>Solution Code</h3>
-        <pre>{{ function_header }}</pre>
         {{ problem_form.solution_code.label_tag }}
-        <textarea name="solution_code" rows="10" cols="50">{{ solution_code|default:"" }}</textarea>
+        <textarea name="solution_code" rows="10" cols="50">{{ solution_code|default:function_header }}</textarea>
         
         <h3>Test Cases</h3>
         {{ test_case_formset.management_form }}
@@ -133,13 +161,11 @@
         </div>
         <button type="button" onclick="addTestCase()">Add Test Case</button>
         
-        <!-- Hidden field to persist input_vars -->
         <input type="hidden" name="input_vars" value='{{ input_vars|json_dumps|safe }}'>
         
         <button type="submit" name="run">Run Code</button>
         <button type="submit" name="save" id="submit-problem" {% if not all_tests_passed %}disabled{% endif %}>Submit Problem</button>
         
-        <!-- Test Results section with styled output -->
         <h3>Test Results:</h3>
         {% if results %}
             {% for result in results %}
@@ -155,6 +181,7 @@
                         {% endif %}
                     </p>
                     <p><strong>Logs:</strong> <pre>{{ result.console_logs|default:"No logs" }}</pre></p>
+                    <p><strong>Code Submitted:</strong> <pre>{{ solution_code }}</pre></p>
                     {% if result.error %}
                         <p><strong>Error:</strong> {{ result.error }}</p>
                     {% endif %}
@@ -166,11 +193,14 @@
     {% endif %}
 </form>
 
-<!-- JavaScript for first stage (parameters) -->
 {% if not header_generated %}
 <button type="button" onclick="addInputVar()">Add Parameter</button>
+<script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
 <script>
     let inputCount = {{ input_vars|length|default:1 }};
+    let choicesInstance;
+
     function addInputVar() {
         const div = document.createElement('div');
         div.className = 'input-var';
@@ -217,6 +247,44 @@
         }
     }
 
+    function addNewTags() {
+        const input = document.getElementById('new_tags_input');
+        const newTags = input.value.split(',').map(tag => tag.trim()).filter(tag => tag);
+        const existingTags = choicesInstance.getValue(true); // Get current selected tags
+        
+        newTags.forEach(tag => {
+            if (!existingTags.includes(tag)) {
+                choicesInstance.setChoices([{ value: tag, label: tag, selected: true }], 'value', 'label', false);
+            }
+        });
+        
+        updateNewTagsHidden();
+        input.value = '';
+    }
+
+    function updateNewTagsHidden() {
+        const allSelectedTags = choicesInstance.getValue(true); // All tags in the dropdown
+        const existingTags = [{% for tag in all_tags %}'{{ tag.name }}'{% if not forloop.last %}, {% endif %}{% endfor %}];
+        const newTags = allSelectedTags.filter(tag => !existingTags.includes(tag));
+        document.getElementById('new_tags').value = newTags.join(',');
+        console.log('Updated new_tags:', newTags);
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const tagsSelect = document.getElementById('tags');
+        choicesInstance = new Choices(tagsSelect, {
+            removeItemButton: true,
+            placeholderValue: 'Search existing tags',
+            searchPlaceholderValue: 'Type to search tags',
+            maxItemCount: 10,
+            searchEnabled: true,
+            shouldSort: false,
+            callbackOnInit: function() {
+                this.passedElement.element.addEventListener('removeItem', updateNewTagsHidden);
+            }
+        });
+    });
+
     document.getElementById('problem-form').addEventListener('submit', function(e) {
         const formData = new FormData(this);
         console.log('Form data on submit:', Object.fromEntries(formData.entries()));
@@ -224,7 +292,6 @@
 </script>
 {% endif %}
 
-<!-- JavaScript for second stage (test cases and submit button control) -->
 {% if header_generated %}
 <script>
     let testCaseCount = {{ test_case_data|length|default:1 }};
@@ -264,7 +331,7 @@
             });
             updateSubmitButton();
             console.log('After test case removal:', Array.from(remainingTests).map(div => ({
-                param: div.querySelector('input[name^="form-"][name$="-param_"]').value,
+                params: Array.from(div.querySelectorAll('input[name^="form-"][name$="-param_"]')).map(input => input.value),
                 expected: div.querySelector('input[name$="-expected_output"]').value
             })));
         } else {
@@ -288,7 +355,38 @@
         submitButton.disabled = !allPassed;
     }
 
-    document.addEventListener('DOMContentLoaded', updateSubmitButton);
+    document.querySelector('textarea[name="solution_code"]').addEventListener('keydown', function(e) {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const start = this.selectionStart;
+            const end = this.selectionEnd;
+            const value = this.value;
+            const indent = '    ';
+            this.value = value.substring(0, start) + indent + value.substring(end);
+            this.selectionStart = this.selectionEnd = start + indent.length;
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            const start = this.selectionStart;
+            const end = this.selectionEnd;
+            const value = this.value;
+            const beforeCursor = value.substring(0, start);
+            const afterCursor = value.substring(end);
+            const lastLine = beforeCursor.split('\n').slice(-1)[0];
+            const indentMatch = lastLine.match(/^\s*/)[0];
+            let newIndent = indentMatch;
+            
+            if (lastLine.trim().endsWith(':')) {
+                newIndent += '    ';
+            }
+            
+            this.value = beforeCursor + '\n' + newIndent + afterCursor;
+            this.selectionStart = this.selectionEnd = start + 1 + newIndent.length;
+        }
+    });
+
+    document.addEventListener('DOMContentLoaded', function() {
+        updateSubmitButton();
+    });
 </script>
 {% endif %}
 
@@ -313,6 +411,15 @@
         background-color: #f5f5f5;
         padding: 10px;
         border-radius: 5px;
+        font-family: monospace;
+    }
+    textarea {
+        background-color: #f5f5f5;
+        padding: 10px;
+        border-radius: 5px;
+        font-family: monospace;
+        white-space: pre-wrap;
+        tab-size: 4;
     }
     .pass {
         color: green;
@@ -331,5 +438,53 @@
         color: red;
         cursor: pointer;
     }
+    .tags-container {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+    .tag-section {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+    }
+    #tags {
+        width: 300px;
+    }
+    .choices__inner {
+        min-height: 34px;
+        padding: 5px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        background-color: #fff;
+    }
+    .choices__list--multiple .choices__item {
+        background-color: #007bff;
+        border: 1px solid #0056b3;
+        border-radius: 3px;
+    }
+    .new-tags-input-wrapper {
+        display: flex;
+        gap: 5px;
+        margin-top: 5px;
+    }
+    #new_tags_input {
+        width: 230px;
+        padding: 5px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 14px;
+    }
+    .new-tags-input-wrapper button {
+        padding: 5px 10px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        background-color: #f8f9fa;
+        cursor: pointer;
+    }
+    .new-tags-input-wrapper button:hover {
+        background-color: #e9ecef;
+    }
 </style>
+
 {% endblock %}

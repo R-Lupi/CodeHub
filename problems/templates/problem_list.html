@@ -4,22 +4,45 @@
     {% if user.is_authenticated %}
         <p><a href="{% url 'create_problem' %}" style="display: inline-block; padding: 10px 20px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px;">Create Problem</a></p>
     {% endif %}
-    <form method="GET">
-        <input type="text" name="q" placeholder="Search..." value="{{ request.GET.q }}">
-        <button type="submit">Search</button>
+    
+    <form method="GET" style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
+        <div style="position: relative; display: flex; align-items: center;">
+            <select name="tag" style="padding: 8px; border: 1px solid #ccc; border-radius: 5px 0 0 5px; border-right: none;">
+                <option value="">All Tags</option>
+                {% for tag in tags %}
+                    <option value="{{ tag.name }}" {% if request.GET.tag == tag.name %}selected{% endif %}>{{ tag.name }}</option>
+                {% endfor %}
+            </select>
+            <input type="text" name="q" placeholder="Search..." value="{{ request.GET.q }}" style="padding: 8px; border: 1px solid #ccc; border-radius: 0; margin-left: -1px; flex-grow: 1;">
+            <button type="submit" style="padding: 8px 15px; background-color: #007BFF; color: white; border: none; border-radius: 0 5px 5px 0; cursor: pointer;">Search</button>
+        </div>
     </form>
-    <h3>Filter by Tag:</h3>
-    <ul>
-        {% for tag in tags %}
-            <li><a href="?tag={{ tag.name }}">{{ tag.name }}</a></li>
-        {% endfor %}
-    </ul>
+
+    {% if user.is_authenticated %}
+        <form method="GET" style="margin-bottom: 20px;">
+            <h3>Filter by Your Interactions:</h3>
+            <label><input type="checkbox" name="liked" {% if request.GET.liked %}checked{% endif %}> Liked</label>
+            <label style="margin-left: 15px;"><input type="checkbox" name="disliked" {% if request.GET.disliked %}checked{% endif %}> Disliked</label>
+            <label style="margin-left: 15px;"><input type="checkbox" name="favorited" {% if request.GET.favorited %}checked{% endif %}> Favorited</label>
+            <button type="submit" style="margin-left: 15px; padding: 5px 10px; background-color: #007BFF; color: white; border: none; border-radius: 5px; cursor: pointer;">Apply Filters</button>
+            <!-- Preserve search and tag filters -->
+            <input type="hidden" name="q" value="{{ request.GET.q }}">
+            <input type="hidden" name="tag" value="{{ request.GET.tag }}">
+        </form>
+    {% endif %}
+
     <ul>
         {% for problem in problems %}
-            <li>
+            <li style="margin-bottom: 15px;">
                 <a href="{% url 'problem_detail' problem.id %}">{{ problem.title }}</a> 
-                ({{ problem.difficulty }}) - Created by {{ problem.created_by.username }} on {{ problem.created_at|date:"Y-m-d" }}
+                ({{ problem.difficulty }}) - 
+                Created by <a href="{% url 'profile' %}?user={{ problem.created_by.username }}">{{ problem.created_by.username }}</a> 
+                on {{ problem.created_at|date:"Y-m-d" }} - 
+                Likes: {{ problem.get_likes_count }} | Dislikes: {{ problem.get_dislikes_count }} | 
+                Attempts: {{ problem.attempt_count }} | Solved: {{ problem.solve_count }}
             </li>
+        {% empty %}
+            <li>No problems found.</li>
         {% endfor %}
     </ul>
 {% endblock %}

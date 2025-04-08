@@ -4,11 +4,13 @@ import time
 import requests
 import re
 import platform
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
-from .models import Problem, Tag, Solution, TestCase
+from django.contrib.auth.models import User  # Added this import
+from django.http import JsonResponse
+from .models import Problem, Tag, Solution, TestCase, ProblemRating, FavoriteProblem
 from .forms import ProblemForm, TestCaseFormSet
 
 def run_code_in_docker(code, test_cases, input_vars, language='python'):
@@ -23,36 +25,58 @@ def run_code_in_docker(code, test_cases, input_vars, language='python'):
         'int': int,
         'float': float,
         'str': str,
-        'bool': lambda x: x.lower() == 'true',
+        'bool': lambda x: str(x).lower() == 'true',
         'list': json.loads,
         'dict': json.loads,
-        'None': lambda x: None  # Handle None explicitly
+        'None': lambda x: None if str(x).lower() == 'null' else x
+    }
+    type_checks = {
+        'int': int,
+        'float': float,
+        'str': str,
+        'bool': bool,
+        'list': list,
+        'dict': dict,
+        'None': type(None)
     }
 
     for test_case in test_cases:
         input_json = test_case.input_value
-        expected_output = test_case.expected_output
+        expected_output = test_case.expected_output  # Now a JSONField
 
         input_dict = json.loads(input_json)
         for var in input_vars:
             if var['name'] in input_dict:
+                value = input_dict[var['name']]
+                expected_type = type_checks.get(var['type'], str)
                 converter = type_converters.get(var['type'], str)
-                try:
-                    input_dict[var['name']] = converter(input_dict[var['name']])
-                except (ValueError, json.JSONDecodeError):
-                    input_dict[var['name']] = input_dict[var['name']]
+                if not isinstance(value, expected_type):
+                    try:
+                        input_dict[var['name']] = converter(value)
+                    except (ValueError, json.JSONDecodeError, TypeError):
+                        input_dict[var['name']] = value
 
-        wrapper_code = f"""
-import json
-import sys
+        input_data_str = "{"
+        for key, value in input_dict.items():
+            if isinstance(value, bool):
+                input_data_str += f'"{key}": {"True" if value else "False"}, '
+            elif value is None:
+                input_data_str += f'"{key}": None, '
+            elif isinstance(value, (list, dict)):
+                input_data_str += f'"{key}": {json.dumps(value)}, '
+            else:
+                input_data_str += f'"{key}": {repr(value)}, '
+        input_data_str = input_data_str.rstrip(", ") + "}"
 
-{code}
-
-input_data = {json.dumps(input_dict)}
-print("Parameters: " + str(input_data))
-result = solution(**input_data)
-print("RESULT_SEPARATOR:" + json.dumps(result))
-"""
+        wrapper_code = (
+            "import json\n"
+            "import sys\n\n"
+            f"{code}\n\n"
+            f"input_data = {input_data_str}\n"
+            "print(\"Parameters: \" + str(input_data))\n"
+            "result = solution(**input_data)\n"
+            "print(\"RESULT_SEPARATOR:\" + json.dumps(result))"
+        )
         print(f"Running wrapper code:\n{wrapper_code}")
         try:
             container = client.containers.create(
@@ -86,28 +110,27 @@ print("RESULT_SEPARATOR:" + json.dumps(result))
             console_logs_str = "\n".join(console_logs).strip() if console_logs else "No console output"
             print(f"Container logs:\n{logs}")
 
-            expected_parsed = json.loads(expected_output) if expected_output.startswith('"') else expected_output
             return_type = test_case.__dict__.get('return_type', 'str')
             converter = type_converters.get(return_type, str)
             try:
-                if return_type == 'None':
-                    expected_parsed = None if expected_output == 'null' else expected_output
-                    actual_output = None if actual_output is None else actual_output
-                elif return_type in ['int', 'float', 'bool']:
-                    actual_output = converter(actual_output)
-                    expected_parsed = converter(expected_parsed)
-                elif return_type == 'str':
-                    actual_output = str(actual_output)
-                    expected_parsed = str(expected_parsed)
-            except (ValueError, TypeError):
-                pass
+                expected_parsed = expected_output if isinstance(expected_output, (list, dict)) else json.loads(expected_output)
+            except (json.JSONDecodeError, TypeError):
+                expected_parsed = expected_output
+
+            if return_type == 'None':
+                expected_parsed = None if expected_output in [None, 'null', ''] else expected_output
+                actual_output = None if actual_output in [None, ''] else actual_output
+            elif return_type == 'str':
+                actual_output = str(actual_output)
+            elif return_type in ['int', 'float', 'bool']:
+                actual_output = converter(actual_output) if isinstance(actual_output, (str, int, float, bool)) else actual_output
 
             passed = actual_output == expected_parsed
             print(f"Debug: actual_output={actual_output} (type={type(actual_output)}), expected_parsed={expected_parsed} (type={type(expected_parsed)}), passed={passed}, return_type={return_type}")
 
             results.append({
                 'input': input_json,
-                'expected': expected_output,
+                'expected': json.dumps(expected_output) if isinstance(expected_output, (list, dict)) else str(expected_output),
                 'actual': actual_output_raw,
                 'passed': passed,
                 'console_logs': console_logs_str
@@ -124,7 +147,7 @@ print("RESULT_SEPARATOR:" + json.dumps(result))
 def generate_function_header(input_vars, return_type):
     """Generate a function header from input variables and return type"""
     params = [f"{var['name']}: {var['type']}" for var in input_vars if var['name'] and var['type']]
-    return f"def solution({', '.join(params)}) -> {return_type}:\n    pass"
+    return f"def solution({', '.join(params)}) -> {return_type}:\n"
 
 def signup(request):
     if request.method == 'POST':
@@ -140,27 +163,57 @@ def signup(request):
 def problem_list(request):
     tag = request.GET.get('tag')
     query = request.GET.get('q')
+    liked = request.GET.get('liked')
+    disliked = request.GET.get('disliked')
+    favorited = request.GET.get('favorited')
+
     problems = Problem.objects.all()
-    if tag:
-        problems = problems.filter(tags__name=tag)
+
+    # Text search filter
     if query:
         problems = problems.filter(title__icontains=query) | problems.filter(description__icontains=query)
+
+    # Tag filter
+    if tag:
+        problems = problems.filter(tags__name=tag)
+
+    # Interaction filters (authenticated users only)
+    if request.user.is_authenticated:
+        if liked:
+            problems = problems.filter(ratings__user=request.user, ratings__vote=1)
+        if disliked:
+            problems = problems.filter(ratings__user=request.user, ratings__vote=-1)
+        if favorited:
+            problems = problems.filter(favorited_by__user=request.user)
+
     tags = Tag.objects.all()
     return render(request, 'problem_list.html', {'problems': problems, 'tags': tags})
 
 def problem_detail(request, problem_id):
-    problem = Problem.objects.get(id=problem_id)
+    problem = get_object_or_404(Problem, id=problem_id)
     user_solution = None
     all_solutions = Solution.objects.filter(problem=problem).order_by('-created_at')
+    user_rating = None
+    is_favorited = False
     if request.user.is_authenticated:
         user_solution = Solution.objects.filter(problem=problem, created_by=request.user).order_by('-created_at').first()
+        user_rating = ProblemRating.objects.filter(problem=problem, user=request.user).first()
+        is_favorited = FavoriteProblem.objects.filter(problem=problem, user=request.user).exists()
+    likes = problem.ratings.filter(vote=1).count()
+    dislikes = problem.ratings.filter(vote=-1).count()
+    net_rating = likes - dislikes
     return render(request, 'problem_detail.html', {
         'problem': problem,
         'user_solution': user_solution,
         'all_solutions': all_solutions,
         'function_header': problem.function_header,
         'input_vars': problem.input_vars,
-        'return_type': problem.return_type
+        'return_type': problem.return_type,
+        'likes': likes,
+        'dislikes': dislikes,
+        'net_rating': net_rating,
+        'user_rating': user_rating,
+        'is_favorited': is_favorited,
     })
 
 @login_required
@@ -185,7 +238,12 @@ def create_problem(request):
             return_type = request.POST.get('return_type', 'None')
             function_header = generate_function_header(input_vars, return_type)
             
+            selected_tags = request.POST.getlist('tags')
+            new_tags = request.POST.get('new_tags', '').split(',')
+            new_tags = [tag.strip() for tag in new_tags if tag.strip()]
+            
             test_case_formset = TestCaseFormSet()
+            problem_form = ProblemForm(request.POST, initial={'solution_code': function_header})
             print(f"Generated header: {function_header}, input_vars: {input_vars}")
             return render(request, 'create_problem.html', {
                 'problem_form': problem_form,
@@ -193,7 +251,10 @@ def create_problem(request):
                 'input_vars': input_vars,
                 'return_type': return_type,
                 'function_header': function_header,
-                'header_generated': True
+                'header_generated': True,
+                'selected_tags': selected_tags,
+                'new_tags': new_tags,
+                'all_tags': Tag.objects.all()
             })
 
         elif 'run' in request.POST or 'save' in request.POST:
@@ -213,6 +274,9 @@ def create_problem(request):
             return_type = request.POST.get('return_type', 'None')
             function_header = generate_function_header(input_vars, return_type)
 
+            selected_tags = request.POST.getlist('tags')
+            new_tags = request.POST.get('new_tags', '').split(',')
+            new_tags = [tag.strip() for tag in new_tags if tag.strip()]
             print(f"POST data: {request.POST}")
 
             test_cases = []
@@ -223,31 +287,53 @@ def create_problem(request):
             for i in range(max_index + 1):
                 input_dict = {}
                 test_case_input = {}
-                param_values = request.POST.getlist(f'form-{i}-param_{input_vars[0]["name"]}')
+                for var in input_vars:
+                    param_values = request.POST.getlist(f'form-{i}-param_{var["name"]}')
+                    print(f"Test case {i} - {var['name']} values: {param_values}")
+                    if param_values:
+                        value = param_values[0].strip()
+                        if var['type'] in ['dict', 'list']:
+                            if value.startswith(f"{var['name']}:"):
+                                value = value[len(var['name']) + 1:].strip()
+                            try:
+                                parsed_value = json.loads(value)
+                                input_dict[var['name']] = parsed_value
+                            except json.JSONDecodeError:
+                                input_dict[var['name']] = value
+                        elif var['type'] == 'bool':
+                            input_dict[var['name']] = value.lower() == 'true'
+                        elif var['type'] == 'int':
+                            input_dict[var['name']] = int(value)
+                        elif var['type'] == 'float':
+                            input_dict[var['name']] = float(value)
+                        elif var['type'] == 'None':
+                            input_dict[var['name']] = None if value.lower() == 'null' else value
+                        else:
+                            input_dict[var['name']] = value
+                        test_case_input[var['name']] = param_values[0]
                 expected_values = request.POST.getlist(f'form-{i}-expected_output')
-                print(f"Test case {i} - param_values: {param_values}, expected_values: {expected_values}")
-                if param_values and expected_values:
-                    for param, expected in zip(param_values, expected_values):
-                        if param and expected:
-                            input_dict[input_vars[0]['name']] = param
-                            test_case_input[input_vars[0]['name']] = param
-                            test_cases.append(type('TestCase', (), {
-                                'input_value': json.dumps(input_dict),
-                                'expected_output': json.dumps(expected) if return_type != 'None' else expected,
-                                'return_type': return_type
-                            }))
-                            test_case_data.append({
-                                'inputs': test_case_input.copy(),
-                                'expected_output': expected
-                            })
+                print(f"Test case {i} - expected_values: {expected_values}")
+                if input_dict and expected_values:
+                    expected_output = expected_values[0]
+                    if return_type in ['list', 'dict']:
+                        try:
+                            expected_output = json.loads(expected_output)
+                        except json.JSONDecodeError:
+                            pass
+                    test_cases.append(type('TestCase', (), {
+                        'input_value': json.dumps(input_dict),
+                        'expected_output': expected_output,
+                        'return_type': return_type
+                    }))
+                    test_case_data.append({
+                        'inputs': test_case_input,
+                        'expected_output': expected_values[0]
+                    })
             print(f"Test cases: {test_cases}")
-            print(f"Test case data: {test_case_data}")
+            print(f"Test case_data: {test_case_data}")
 
             if problem_form.is_valid():
-                solution_code = problem_form.cleaned_data['solution_code']
-                full_function_header = generate_function_header(input_vars, return_type)
-                if not solution_code.strip().startswith('def solution'):
-                    solution_code = full_function_header.replace('pass', '') + solution_code
+                solution_code = request.POST.get('solution_code', '')
 
                 if 'run' in request.POST:
                     print(f"Solution code: {solution_code}")
@@ -265,7 +351,10 @@ def create_problem(request):
                         'function_header': function_header,
                         'header_generated': True,
                         'test_case_data': test_case_data,
-                        'all_tests_passed': all_tests_passed
+                        'all_tests_passed': all_tests_passed,
+                        'selected_tags': selected_tags,
+                        'new_tags': new_tags,
+                        'all_tags': Tag.objects.all()
                     })
                 elif 'save' in request.POST:
                     print(f"Re-running tests before save with solution code: {solution_code}")
@@ -281,13 +370,21 @@ def create_problem(request):
                         problem.solution_code = solution_code
                         problem.save()
                         
-                        for test_case in test_cases:
+                        for tag_name in selected_tags:
+                            tag, _ = Tag.objects.get_or_create(name=tag_name.strip())
+                            problem.tags.add(tag)
+                        for tag_name in new_tags:
+                            tag, _ = Tag.objects.get_or_create(name=tag_name.strip())
+                            problem.tags.add(tag)
+                        
+                        # Save test cases to the database
+                        for tc in test_cases:
                             TestCase.objects.create(
                                 problem=problem,
-                                input_value=test_case.input_value,
-                                expected_output=test_case.expected_output
+                                input_value=tc.input_value,
+                                expected_output=tc.expected_output
                             )
-                        print(f"Problem saved with ID: {problem.id}")
+                        print(f"Problem saved with ID: {problem.id} and {len(test_cases)} test cases")
                         if 'last_run_results' in request.session:
                             del request.session['last_run_results']
                         return redirect('problem_detail', problem_id=problem.id)
@@ -304,7 +401,10 @@ def create_problem(request):
                             'header_generated': True,
                             'test_case_data': test_case_data,
                             'all_tests_passed': False,
-                            'error': 'All test cases must pass with the current configuration before submitting.'
+                            'error': 'All test cases must pass with the current configuration before submitting.',
+                            'selected_tags': selected_tags,
+                            'new_tags': new_tags,
+                            'all_tags': Tag.objects.all()
                         })
             print("Form errors:", problem_form.errors, test_case_formset.errors)
             return render(request, 'create_problem.html', {
@@ -315,7 +415,10 @@ def create_problem(request):
                 'function_header': function_header,
                 'header_generated': True,
                 'test_case_data': test_case_data,
-                'error': 'Please correct the errors in the form.'
+                'error': 'Please correct the errors in the form.',
+                'selected_tags': selected_tags,
+                'new_tags': new_tags,
+                'all_tags': Tag.objects.all()
             })
     else:
         if 'last_run_results' in request.session:
@@ -325,64 +428,235 @@ def create_problem(request):
             'problem_form': problem_form,
             'input_vars': [],
             'return_type': 'None',
-            'header_generated': False
+            'header_generated': False,
+            'all_tags': Tag.objects.all()
         })
 
 @login_required
 def submit_solution(request, problem_id):
-    problem = Problem.objects.get(id=problem_id)
+    problem = get_object_or_404(Problem, id=problem_id)
     function_header = problem.function_header
     test_cases = problem.test_cases.all()
     user_solution = Solution.objects.filter(problem=problem, created_by=request.user).order_by('-created_at').first()
     initial_code = user_solution.code if user_solution else function_header
 
     if request.method == 'POST':
-        code = request.POST.get('code')
-        if 'run' in request.POST:
-            for tc in test_cases:
-                tc.return_type = problem.return_type
-            results = run_code_in_docker(code, test_cases)
+        code = request.POST.get('code', '').strip()
+        print(f"POST request received. Code: {code if code else 'None'}")
+        
+        if not code:
+            print("No code provided")
             return render(request, 'submit_solution.html', {
                 'problem': problem,
                 'function_header': function_header,
                 'code': code,
-                'results': results,
-                'input_vars': problem.input_vars,
-                'return_type': problem.return_type
-            })
-        elif 'submit' in request.POST:
-            for tc in test_cases:
-                tc.return_type = problem.return_type
-            results = run_code_in_docker(code, test_cases)
-            if all(result.get('passed', False) for result in results):
-                if user_solution:
-                    user_solution.code = code
-                    user_solution.save()
-                else:
-                    Solution.objects.create(problem=problem, code=code, created_by=request.user)
-                return redirect('problem_detail', problem_id=problem.id)
-            return render(request, 'submit_solution.html', {
-                'problem': problem,
-                'function_header': function_header,
-                'code': code,
-                'results': results,
-                'error': 'Solution failed some test cases',
+                'error': 'Please enter code to run or submit.',
                 'input_vars': problem.input_vars,
                 'return_type': problem.return_type
             })
 
-    return render(request, 'submit_solution.html', {
-        'problem': problem,
-        'function_header': function_header,
-        'code': initial_code,
-        'input_vars': problem.input_vars,
-        'return_type': problem.return_type
-    })
+        test_cases_with_return_type = [
+            type('TestCase', (), {
+                'input_value': tc.input_value,
+                'expected_output': tc.expected_output,
+                'return_type': problem.return_type
+            }) for tc in test_cases
+        ]
+        print(f"Test cases loaded: {len(test_cases_with_return_type)}")
+
+        if not test_cases_with_return_type:
+            print("No test cases available for this problem")
+            return render(request, 'submit_solution.html', {
+                'problem': problem,
+                'function_header': function_header,
+                'code': code,
+                'error': 'No test cases defined for this problem.',
+                'input_vars': problem.input_vars,
+                'return_type': problem.return_type
+            })
+
+        # Update attempted_by: Add user if this is their first attempt
+        if request.user not in problem.attempted_by.all():
+            problem.attempted_by.add(request.user)
+            print(f"User {request.user.username} marked as attempted problem {problem.id} for the first time")
+
+        if 'run' in request.POST:
+            print(f"Run button clicked. Executing code:\n{code}")
+            try:
+                results = run_code_in_docker(code, test_cases_with_return_type, problem.input_vars)
+                print(f"Raw results from run_code_in_docker: {results}")
+                all_tests_passed = all(result.get('passed', False) for result in results) if results else False
+                if not results:
+                    print("No results returned from run_code_in_docker")
+                    return render(request, 'submit_solution.html', {
+                        'problem': problem,
+                        'function_header': function_header,
+                        'code': code,
+                        'error': 'No test results generated. Check your code or test cases.',
+                        'input_vars': problem.input_vars,
+                        'return_type': problem.return_type
+                    })
+                print(f"Processed results: {results}, all_tests_passed: {all_tests_passed}")
+                return render(request, 'submit_solution.html', {
+                    'problem': problem,
+                    'function_header': function_header,
+                    'code': code,
+                    'results': results,
+                    'all_tests_passed': all_tests_passed,
+                    'input_vars': problem.input_vars,
+                    'return_type': problem.return_type
+                })
+            except Exception as e:
+                print(f"Error during code execution: {str(e)}")
+                return render(request, 'submit_solution.html', {
+                    'problem': problem,
+                    'function_header': function_header,
+                    'code': code,
+                    'error': f"Failed to run code: {str(e)}",
+                    'input_vars': problem.input_vars,
+                    'return_type': problem.return_type
+                })
+        elif 'submit' in request.POST:
+            print(f"Submit button clicked. Executing code:\n{code}")
+            try:
+                results = run_code_in_docker(code, test_cases_with_return_type, problem.input_vars)
+                all_tests_passed = all(result.get('passed', False) for result in results) if results else False
+                print(f"Results from run_code_in_docker: {results}, all_tests_passed: {all_tests_passed}")
+                if all_tests_passed:
+                    if user_solution:
+                        user_solution.code = code
+                        user_solution.save()
+                        print("Updated existing solution")
+                    else:
+                        Solution.objects.create(problem=problem, code=code, created_by=request.user)
+                        print("Created new solution")
+                    # Update solved_by: Add user if this is their first successful solution
+                    if request.user not in problem.solved_by.all():
+                        problem.solved_by.add(request.user)
+                        print(f"User {request.user.username} marked as solved problem {problem.id} for the first time")
+                    return redirect('problem_detail', problem_id=problem.id)
+                return render(request, 'submit_solution.html', {
+                    'problem': problem,
+                    'function_header': function_header,
+                    'code': code,
+                    'results': results,
+                    'all_tests_passed': all_tests_passed,
+                    'error': 'Solution failed some test cases.',
+                    'input_vars': problem.input_vars,
+                    'return_type': problem.return_type
+                })
+            except Exception as e:
+                print(f"Error during submission: {str(e)}")
+                return render(request, 'submit_solution.html', {
+                    'problem': problem,
+                    'function_header': function_header,
+                    'code': code,
+                    'error': f"Error submitting code: {str(e)}",
+                    'input_vars': problem.input_vars,
+                    'return_type': problem.return_type
+                })
+    else:
+        print("GET request to submit_solution")
+        return render(request, 'submit_solution.html', {
+            'problem': problem,
+            'function_header': function_header,
+            'code': initial_code,
+            'input_vars': problem.input_vars,
+            'return_type': problem.return_type
+        })
 
 @login_required
 def profile(request):
-    user_solutions = Solution.objects.filter(created_by=request.user).order_by('-created_at')
+    username = request.GET.get('user', request.user.username)
+    try:
+        user = User.objects.get(username=username)
+    except User.DoesNotExist:
+        user = request.user  # Fallback to current user if specified user not found
+
+    problems_created = user.problems.count()
+    problems_solved = user.solutions.values('problem').distinct().count()
+    favorite_problems = user.favorite_problems.all()
+    user_solutions = Solution.objects.filter(created_by=user).order_by('-created_at')
     return render(request, 'profile.html', {
-        'user': request.user,
-        'solutions': user_solutions
+        'user': user,
+        'solutions': user_solutions,
+        'problems_created': problems_created,
+        'problems_solved': problems_solved,
+        'favorite_problems': favorite_problems,
     })
+
+@login_required
+def rate_problem(request, problem_id):
+    problem = get_object_or_404(Problem, id=problem_id)
+    print(f"Rate problem {problem_id} by {request.user.username}")
+    if request.method == 'POST':
+        vote = request.POST.get('vote')
+        print(f"Received vote: {vote}")
+        try:
+            vote = int(vote)
+            if vote not in [1, -1, 0]:
+                print("Invalid vote value")
+                return JsonResponse({'error': 'Invalid vote'}, status=400)
+            
+            rating = ProblemRating.objects.filter(problem=problem, user=request.user).first()
+            if vote == 0:
+                if rating:
+                    rating.delete()
+                    print(f"Rating removed for user {request.user.username}")
+                user_vote = 0
+            else:
+                rating, created = ProblemRating.objects.get_or_create(
+                    problem=problem,
+                    user=request.user,
+                    defaults={'vote': vote}
+                )
+                if not created:
+                    rating.vote = vote
+                    rating.save()
+                print(f"Rating saved: vote={vote}, created={created}")
+                user_vote = vote
+            
+            likes = problem.ratings.filter(vote=1).count()
+            dislikes = problem.ratings.filter(vote=-1).count()
+            response = {
+                'likes': likes,
+                'dislikes': dislikes,
+                'net_rating': likes - dislikes,
+                'user_vote': user_vote,
+            }
+            print(f"Returning response: {response}")
+            return JsonResponse(response)
+        except ValueError:
+            print("Vote could not be converted to int")
+            return JsonResponse({'error': 'Vote must be an integer'}, status=400)
+        except Exception as e:
+            print(f"Error saving rating: {str(e)}")
+            return JsonResponse({'error': f'Server error: {str(e)}'}, status=500)
+    print("Not a POST request")
+    return JsonResponse({'error': 'Invalid request'}, status=400)
+
+@login_required
+def toggle_favorite(request, problem_id):
+    problem = get_object_or_404(Problem, id=problem_id)
+    if request.method == 'POST':
+        favorite, created = FavoriteProblem.objects.get_or_create(
+            problem=problem,
+            user=request.user
+        )
+        if not created:
+            favorite.delete()
+            is_favorited = False
+        else:
+            is_favorited = True
+        return JsonResponse({'is_favorited': is_favorited})
+    return JsonResponse({'error': 'Invalid request'}, status=400)
+
+@login_required
+def delete_problem(request, problem_id):
+    problem = get_object_or_404(Problem, id=problem_id)
+    if request.user != problem.created_by:
+        return redirect('problem_detail', problem_id=problem.id)  # Unauthorized users redirected back
+    if request.method == 'POST':
+        problem.delete()
+        return redirect('problem_list')
+    return redirect('problem_detail', problem_id=problem.id)

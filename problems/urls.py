@@ -8,5 +8,8 @@ urlpatterns = [
     path('create/', views.create_problem, name='create_problem'),
     path('signup/', views.signup, name='signup'),
     path('problem/<int:problem_id>/submit/', views.submit_solution, name='submit_solution'),
-    path('accounts/profile/', views.profile, name='profile'),  # New profile URL
+    path('accounts/profile/', views.profile, name='profile'),  
+    path('problem/<int:problem_id>/rate/', views.rate_problem, name='rate_problem'), 
+    path('problem/<int:problem_id>/favorite/', views.toggle_favorite, name='toggle_favorite'),
+    path('problem/<int:problem_id>/delete/', views.delete_problem, name='delete_problem'),  
 ]

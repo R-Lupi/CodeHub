@@ -1,11 +1,10 @@
-<!-- problems/templates/submit_solution.html -->
 {% extends 'base.html' %}
 {% block content %}
     <h1>{% if code %}Edit{% else %}Submit{% endif %} Solution for {{ problem.title }}</h1>
     <p>Function Header: <pre>{{ function_header }}</pre></p>
     <form method="POST">
         {% csrf_token %}
-        <textarea name="code" rows="10" cols="50">{{ code|default:'' }}</textarea>
+        <textarea name="code" rows="10" cols="50">{{ code|default:function_header }}</textarea>
         <button type="submit" name="run">Run</button>
         <button type="submit" name="submit">Submit</button>
     </form>
@@ -32,4 +31,48 @@
             <p style="color: red;">{{ error }}</p>
         {% endif %}
     {% endif %}
+
+    <script>
+        // Enhanced indentation support for Tab and Enter in code textarea
+        document.querySelector('textarea[name="code"]').addEventListener('keydown', function(e) {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                const start = this.selectionStart;
+                const end = this.selectionEnd;
+                const value = this.value;
+                const indent = '    '; // 4 spaces
+                this.value = value.substring(0, start) + indent + value.substring(end);
+                this.selectionStart = this.selectionEnd = start + indent.length;
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                const start = this.selectionStart;
+                const end = this.selectionEnd;
+                const value = this.value;
+                const beforeCursor = value.substring(0, start);
+                const afterCursor = value.substring(end);
+                const lastLine = beforeCursor.split('\n').slice(-1)[0];
+                const indentMatch = lastLine.match(/^\s*/)[0]; // Get leading whitespace
+                let newIndent = indentMatch;
+                
+                // Add extra indent if the last line ends with a colon (e.g., loop or block start)
+                if (lastLine.trim().endsWith(':')) {
+                    newIndent += '    '; // Add 4 more spaces
+                }
+                
+                this.value = beforeCursor + '\n' + newIndent + afterCursor;
+                this.selectionStart = this.selectionEnd = start + 1 + newIndent.length;
+            }
+        });
+    </script>
+
+    <style>
+        textarea {
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            tab-size: 4;
+        }
+    </style>
 {% endblock %}
