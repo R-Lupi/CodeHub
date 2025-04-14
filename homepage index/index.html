@@ -1,73 +1,146 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CodeHub</title>
-    <style>
-        body{
-           background-color:#100040;
-           color: white;
-           text-align: center;
-        }
-        
-        .top_banner{
-            position: relative;
-            width: 100%;
-            height: 70px;
-            background-color: #625b76;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        #python-ide{
-            background-color: #17005d;
-            color: white;
-            height: 600px;
-            width: 1400px;
-            margin-top: 50px;
-        }
-        .login{
-            width: 60px;
-            height: 50px;
-            background-color: #3c395f;
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CodeHub</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background-color: #5ce7e0;
+    }
 
-        }
-        .account{
-            width: 60px;
-            height: 50px;
-            background-color: #3c395f;
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+    /* Navbar */
+    .navbar {
+      background-color: #1a1a1a;
+      overflow: hidden;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 2rem;
+    }
 
+    .navbar a {
+      color: white;
+      text-decoration: none;
+      margin: 0 1rem;
+    }
 
+    .navbar a:hover {
+      text-decoration: underline;
+      color:#5ce7e0
+    }
 
-        }
- </style>
+    .nav-links {
+      display: flex;
+      align-items: center;
+    }
+
+    /* Pages */
+    .page {
+      padding: 2rem;
+      display: none;
+    }
+
+    .active {
+      display: block;
+    }
+
+    .category {
+      background-color: white;
+      border-radius: 8px;
+      padding: 1rem;
+      margin: 1rem 0;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    form {
+      max-width: 400px;
+      margin: auto;
+      background: white;
+      padding: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    input[type="text"], input[type="password"], input[type="email"] {
+      width: 100%;
+      padding: 0.5rem;
+      margin: 0.5rem 0 1rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+
+    input[type="submit"] {
+      background-color: #1a1a1a;
+      color: white;
+      border: none;
+      padding: 0.75rem;
+      border-radius: 4px;
+      cursor: pointer;
+      width: 100%;
+    }
+  </style>
 </head>
 <body>
-    <header>
-        <div class="top_banner">
-            <div class="login">Login</div>
-<h1>CodeHub</h1>
-<div class="account">Account</div>
-</div>
-    </header>
-    <main>
-<textarea name="ide" id="python-ide" placeholder="Start writing code..."></textarea>
-    </main>
-    <footer>
+  <div class="navbar">
+    <div class="logo">
+      <a href="#" onclick="showPage('home')">CodeHub</a>
+    </div>
+    <div class="nav-links">
+      <a href="#" onclick="showPage('home')">Home</a>
+      <a href="#" onclick="showPage('browse')">Browse</a>
+      <a href="#" onclick="showPage('login')">Login</a>
+      <a href="#" onclick="showPage('signup')">Signup</a>
+    </div>
+  </div>
 
-    </footer> 
+  <div id="home" class="page active">
+    <h1>Welcome to CodeHub!</h1>
+    <p>Submit coding problems and help others by solving theirs!</p>
+  </div>
+
+  <div id="browse" class="page">
+    <h2>Browse by Language</h2>
+    <div class="category">Python</div>
+    <div class="category">JavaScript</div>
+    <div class="category">C++</div>
+    <div class="category">Java</div>
+    <div class="category">Django</div>
+    <div class="category">Other</div>
+  </div>
+
+  <div id="login" class="page">
+    <h2>Login</h2>
+    <form>
+      <label>Email:</label>
+      <input type="email" required />
+      <label>Password:</label>
+      <input type="password" required />
+      <input type="submit" value="Login" />
+    </form>
+  </div>
+
+  <div id="signup" class="page">
+    <h2>Signup</h2>
+    <form>
+      <label>Username:</label>
+      <input type="text" required />
+      <label>Email:</label>
+      <input type="email" required />
+      <label>Password:</label>
+      <input type="password" required />
+      <input type="submit" value="Signup" />
+    </form>
+  </div>
+
+  <script>
+    function showPage(pageId) {
+      const pages = document.querySelectorAll('.page');
+      pages.forEach(p => p.classList.remove('active'));
+      document.getElementById(pageId).classList.add('active');
+    }
+  </script>
 </body>
 </html>
