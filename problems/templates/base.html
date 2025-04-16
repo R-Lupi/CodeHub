@@ -1,24 +1,401 @@
-<!-- problems/templates/base.html -->
+{% load static %}
 <!DOCTYPE html>
 <html>
 <head>
     <title>CodeHub</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        .container { max-width: 800px; margin: auto; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .messages {
+            margin-bottom: 20px;
+        }
+        .messages .success {
+            background-color: #28a745;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+        .messages .error {
+            background-color: #dc3545;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+        .navbar {
+            background-color: #000000;
+            padding: 15px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+        .navbar-logo img {
+            height: 40px;
+        }
+        .navbar-center {
+            display: flex;
+            align-items: center;
+            flex: 1;
+            justify-content: center;
+            gap: 0;
+            max-width: 500px;
+        }
+        .navbar-tags {
+            min-width: 60px;
+            max-width: 300px;
+            width: fit-content;
+            transition: width 0.3s ease;
+        }
+        .navbar-search {
+            flex: 1;
+        }
+        .navbar-search input {
+            background-color: #2d2d2d;
+            color: #ffffff;
+            border: 1px solid #444444;
+            border-radius: 0 6px 6px 0;
+            padding: 7px 10px;
+            width: 100%;
+            font-size: 14px;
+            height: 34px;
+            line-height: 1.4;
+        }
+        .navbar-search input::placeholder {
+            color: #cccccc;
+        }
+        .navbar-links {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .navbar-links a {
+            color: #ffffff;
+            text-decoration: none;
+            font-size: 14px;
+            transition: color 0.2s;
+        }
+        .navbar-links a:hover {
+            color: #cccccc;
+        }
+        .navbar-links span {
+            font-size: 14px;
+        }
+        .profile-pic {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            object-fit: cover;
+            cursor: pointer;
+            border: 2px solid #333333;
+            transition: border-color 0.2s;
+        }
+        .profile-pic:hover {
+            border-color: #ffffff;
+        }
+        .dropdown {
+            display: none;
+            position: absolute;
+            top: 50px;
+            right: 20px;
+            background-color: #333333;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            min-width: 120px;
+        }
+        .dropdown.active {
+            display: block;
+        }
+        .dropdown a {
+            display: block;
+            padding: 10px 15px;
+            color: #ffffff;
+            font-size: 14px;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+        .dropdown a:hover {
+            background-color: #444444;
+        }
+        .navbar-tags .choices__inner {
+            background-color: #2d2d2d;
+            border: 1px solid #444444;
+            border-right: none;
+            border-radius: 6px 0 0 6px;
+            color: #ffffff;
+            padding: 4px 8px;
+            min-height: 34px;
+            height: 34px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+        }
+        .navbar-tags .choices__input {
+            background-color: #2d2d2d;
+            color: #ffffff;
+            border: none;
+            font-size: 14px;
+            height: 26px;
+            padding: 0;
+            margin: 0;
+            width: 100px;
+            flex-shrink: 0;
+        }
+        .navbar-tags .choices__input::placeholder {
+            color: #cccccc;
+        }
+        .navbar-tags .choices__list--multiple {
+            display: flex;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            overflow-y: hidden;
+            white-space: nowrap;
+            padding-bottom: 2px;
+            scrollbar-width: thin;
+            scrollbar-color: #666666 #2d2d2d;
+            flex-grow: 1;
+            width: auto;
+        }
+        .navbar-tags .choices__list--multiple::-webkit-scrollbar {
+            height: 4px;
+        }
+        .navbar-tags .choices__list--multiple::-webkit-scrollbar-track {
+            background: #2d2d2d;
+        }
+        .navbar-tags .choices__list--multiple::-webkit-scrollbar-thumb {
+            background: #666666;
+            border-radius: 2px;
+        }
+        .navbar-tags .choices__list--multiple::-webkit-scrollbar-thumb:hover {
+            background: #777777;
+        }
+        .navbar-tags .choices__list--multiple .choices__item {
+            background-color: #4a4a4a;
+            border: 1px solid #666666;
+            color: #ffffff;
+            font-size: 12px;
+            padding: 3px 7px;
+            margin: 2px 2px 2px 0;
+            border-radius: 12px;
+            display: inline-flex;
+            align-items: center;
+            transition: background-color 0.2s;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .navbar-tags .choices__list--multiple .choices__item:hover {
+            background-color: #555555;
+        }
+        .navbar-tags .choices__list--multiple .choices__button {
+            border-left: 1px solid #666666;
+            margin-left: 6px;
+            padding-left: 6px;
+            color: #cccccc;
+        }
+        .navbar-tags .choices__list--multiple .choices__button:hover {
+            color: #ffffff;
+        }
+        .navbar-tags .choices__list--dropdown {
+            background-color: #2d2d2d;
+            border: 1px solid #444444;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            margin-top: 4px;
+            width: 200px; /* Ensure dropdown is wide enough */
+        }
+        .navbar-tags .choices__list--dropdown .choices__item {
+            white-space: nowrap; /* Prevent text from breaking into characters */
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding: 8px 12px; /* Add padding for better readability */
+        }
+        .navbar-tags .choices__item--selectable.is-highlighted {
+            background-color: #444444;
+        }
+        h1, h2 {
+            font-weight: 500;
+            margin-bottom: 20px;
+        }
+        a {
+            color: #ffffff;
+            text-decoration: none;
+        }
+        .tag-input {
+            width: 500px;
+        }
+        a:hover {
+            text-decoration: underline;
+            color: #cccccc;
+        }
+        button, input[type="submit"] {
+            background-color: #333333;
+            color: #ffffff;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+        .choices__item--selectable:hover {
+            background-color: #6f6f6f !important;
+            color: #ffffff !important;
+        }
+        .choices__item--selectable.is-highlighted {
+            background-color: #6f6f6f !important;
+            color: #ffffff !important;
+        }
+        button:hover, input[type="submit"]:hover {
+            background-color: #444444;
+        }
+        input:not(.navbar-search input), textarea {
+            background-color: #2d2d2d;
+            color: #ffffff;
+            border: 1px solid #444444;
+            border-radius: 6px;
+            padding: 8px;
+            font-size: 14px;
+            width: 100%;
+        }
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #ffffff;
+        }
+        @media (max-width: 600px) {
+            .container {
+                padding: 15px;
+            }
+            .navbar {
+                flex-direction: column;
+                gap: 10px;
+            }
+            .navbar-center {
+                width: 100%;
+                flex-direction: column;
+                gap: 10px;
+            }
+            .navbar-tags, .navbar-search {
+                width: 100%;
+            }
+            .navbar-tags .choices__inner {
+                border: 1px solid #444444;
+                border-radius: 6px;
+                height: 36px;
+            }
+            .navbar-search input {
+                border-radius: 6px;
+                height: 36px;
+            }
+            .navbar-links {
+                gap: 10px;
+                justify-content: center;
+            }
+        }
     </style>
 </head>
 <body>
+    <nav class="navbar">
+        <div class="navbar-logo">
+            <a href="{% url 'problem_list' %}">
+                <img src="{% static 'problems/logo.png' %}" alt="CodeHub Logo">
+            </a>
+        </div>
+        <div class="navbar-center">
+            <div class="navbar-tags">
+                <select id="tag-filter" multiple>
+                    {% for tag in all_tags %}
+                        <option value="{{ tag.name }}" {% if tag.name in selected_tags %}selected{% endif %}>{{ tag.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="navbar-search">
+                <form id="search-form" method="get" action="{% url 'problem_list' %}">
+                    <input type="text" name="q" id="title-search" placeholder="Search by title" value="{{ search_query|default:'' }}">
+                    <input class="tag-input" type="hidden" name="tags" id="tags-hidden">
+                </form>
+            </div>
+        </div>
+        <div class="navbar-links">
+            {% if user.is_authenticated %}
+                <span>Welcome, {{ user.username }}</span>
+                <img src="{% if user.profile.profile_picture %}{{ user.profile.profile_picture.url }}{% else %}{% static 'problems/default_profile.png' %}{% endif %}" alt="{{ user.username }}'s Profile Picture" class="profile-pic" onclick="toggleDropdown()">
+                <div class="dropdown" id="profile-dropdown">
+                    <a href="{% url 'profile' %}">Profile</a>
+                    <a href="{% url 'logout' %}">Logout</a>
+                </div>
+            {% else %}
+                <a href="{% url 'login' %}">Login</a>
+                <a href="{% url 'signup' %}">Signup</a>
+            {% endif %}
+        </div>
+    </nav>
     <div class="container">
-        {% if user.is_authenticated %}
-            <p>Welcome, {{ user.username }} | 
-               <a href="{% url 'problem_list' %}">Home</a> |
-               <a href="{% url 'profile' %}">Profile</a> | 
-               <a href="{% url 'logout' %}">Logout</a></p>
-        {% else %}
-            <p><a href="{% url 'login' %}">Login</a> | <a href="{% url 'signup' %}">Signup</a></p>
+        {% if messages %}
+            <div class="messages">
+                {% for message in messages %}
+                    <div class="{% if message.tags %}{{ message.tags }}{% endif %}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            </div>
         {% endif %}
         {% block content %}{% endblock %}
     </div>
+    <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
+    <script>
+        function toggleDropdown() {
+            const dropdown = document.getElementById('profile-dropdown');
+            dropdown.classList.toggle('active');
+        }
+        document.addEventListener('click', function(event) {
+            const dropdown = document.getElementById('profile-dropdown');
+            const profilePic = document.querySelector('.profile-pic');
+            if (!dropdown.contains(event.target) && !profilePic.contains(event.target)) {
+                dropdown.classList.remove('active');
+            }
+        });
+        document.addEventListener('DOMContentLoaded', function() {
+            const tagSelect = document.getElementById('tag-filter');
+            const choices = new Choices(tagSelect, {
+                removeItemButton: true,
+                placeholderValue: 'Select tags',
+                searchPlaceholderValue: 'Type to search tags',
+                maxItemCount: 10,
+                searchEnabled: true,
+                shouldSort: false
+            });
+            function updateTagsHidden() {
+                document.getElementById('tags-hidden').value = choices.getValue(true).join(',');
+            }
+            tagSelect.addEventListener('change', function() {
+                updateTagsHidden();
+                document.getElementById('search-form').submit();
+            });
+            document.getElementById('title-search').addEventListener('input', function() {
+                clearTimeout(this.timeout);
+                this.timeout = setTimeout(() => document.getElementById('search-form').submit(), 300);
+            });
+            updateTagsHidden();
+        });
+    </script>
 </body>
 </html>

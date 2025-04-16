@@ -1,7 +1,7 @@
 # problems/forms.py
 from django import forms
 from django.forms import formset_factory
-from .models import Problem, TestCase, Tag
+from .models import Problem, TestCase, Tag, Profile
 import json
 
 class ProblemForm(forms.ModelForm):
@@ -54,5 +54,10 @@ class TestCaseForm(forms.ModelForm):
 
 def get_test_case_formset(extra=1):
     return formset_factory(TestCaseForm, extra=extra)
+
+class ProfileForm(forms.ModelForm):
+    class Meta:
+        model = Profile
+        fields = ['profile_picture']
 
 TestCaseFormSet = get_test_case_formset(extra=1)

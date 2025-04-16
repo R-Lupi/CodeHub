@@ -1,120 +1,343 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block content %}
-    <h1>{{ problem.title }}</h1>
-    <p><strong>Description:</strong> {{ problem.description }}</p>
-    <p><strong>Difficulty:</strong> {{ problem.difficulty }}</p>
-    <p><strong>Created by:</strong> <a href="{% url 'profile' %}?user={{ problem.created_by.username }}">{{ problem.created_by.username }}</a></p>
-    <p id="rating-display"><strong>Likes:</strong> {{ likes }} | <strong>Dislikes:</strong> {{ dislikes }}</p>
-    <p><strong>Attempts:</strong> {{ problem.attempt_count }} | <strong>Solved:</strong> {{ problem.solve_count }}</p>
-    <p><strong>Function Header:</strong> <pre>{{ function_header }}</pre></p>
-
-    {% if user.is_authenticated %}
-        {% if user == problem.created_by %}
-            <form method="POST" action="{% url 'delete_problem' problem.id %}" style="display: inline;">
-                {% csrf_token %}
-                <button type="submit" style="padding: 5px 10px; background-color: #ff4444; color: white; border: none; border-radius: 5px; cursor: pointer;" onclick="return confirm('Are you sure you want to delete this problem?');">Delete Problem</button>
-            </form>
+    <div class="problem-detail">
+        {% if error %}
+            <p class="error">{{ error }}</p>
         {% endif %}
-        <p><a href="{% url 'submit_solution' problem.id %}">Submit Solution</a></p>
-    {% endif %}
 
-    {% if user_solution %}
-        <h3>Your Solution:</h3>
-        <pre>{{ user_solution.code }}</pre>
-    {% endif %}
+        <!-- Problem Header -->
+        <div class="problem-card">
+            <h1>{{ problem.title }}</h1>
+            <div class="meta-row">
+                <span class="meta">Difficulty: {{ problem.difficulty }}</span>
+                <span class="meta created">Created by: 
+                    <a href="{% url 'profile' %}?user={{ problem.created_by.username }}" class="user-link">
+                        <img src="{% if problem.created_by.profile and problem.created_by.profile_picture %}{{ problem.created_by.profile.profile_picture.url }}{% else %}{% static 'problems/default_profile.png' %}{% endif %}" alt="{{ problem.created_by.username }}'s Profile Picture" class="profile-pic">
+                        {{ problem.created_by.username }}
+                    </a>
+                </span>
+                <span class="meta">Likes: {{ likes }}</span>
+                <span class="meta">Dislikes: {{ dislikes }}</span>
+                <span class="meta">Solved: {{ problem.solved_by.count }}</span>
+                <span class="meta">Attempted: {{ problem.attempted_by.count }}</span>
+            </div>
+            <p class="meta">Tags: {% for tag in problem.tags.all %}{{ tag.name }}{% if not forloop.last %}, {% endif %}{% empty %}None{% endfor %}</p>
+            <p class="meta">Input Vars: {{ input_vars|default:"None" }}</p>
+            <p class="meta">Return Type: {{ return_type|default:"None" }}</p>
+            {% if user.is_authenticated %}
+                <div class="rating-actions">
+                    <button id="like-btn" onclick="rateProblem(1)">Like</button>
+                    <button id="dislike-btn" onclick="rateProblem(-1)">Dislike</button>
+                    <button id="favorite-btn" onclick="toggleFavorite()">{{ is_favorited|yesno:"Unfavorite,Favorite" }}</button>
+                    {% if user == problem.created_by %}
+                        <form action="{% url 'delete_problem' problem.id %}" method="post" style="display: inline;">
+                            {% csrf_token %}
+                            <button type="submit" onclick="return confirm('Are you sure you want to delete this problem?');" class="delete-btn">Delete</button>
+                        </form>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
 
-    <h3>All Solutions:</h3>
-    {% for solution in all_solutions %}
-        <p><strong>{{ solution.created_by.username }}</strong> ({{ solution.created_at }}):</p>
-        <pre>{{ solution.code }}</pre>
-    {% empty %}
-        <p>No solutions yet.</p>
-    {% endfor %}
+        <!-- Description -->
+        <div class="problem-card">
+            <h2>Description</h2>
+            <p>{{ problem.description|linebreaks }}</p>
+        </div>
 
+        <!-- Test Cases -->
+        <div class="problem-card">
+            <h2>Test Cases</h2>
+            {% for test_case in problem.test_cases.all %}
+                <div class="test-case">
+                    <p><strong>Input:</strong> {{ test_case.input_value }}</p>
+                    <p><strong>Output:</strong> {{ test_case.expected_output }}</p>
+                </div>
+            {% empty %}
+                <p>No test cases available.</p>
+            {% endfor %}
+        </div>
+
+        <!-- Submission Form -->
+        {% if user.is_authenticated %}
+            <div class="problem-card">
+                <h2>Submit Solution</h2>
+                <form method="POST" action="{% url 'submit_solution' problem.id %}" class="submission-form">
+                    {% csrf_token %}
+                    <textarea id="solution-textarea" name="code" rows="10" placeholder="Enter your solution code...">{% if user == problem.created_by %}{{ function_header }}{% else %}{{ code|default:function_header }}{% endif %}</textarea>
+                    <div class="form-actions">
+                        <button type="submit" name="run">Run Code</button>
+                        <button type="submit" name="submit">Submit Solution</button>
+                    </div>
+                </form>
+                {% if results %}
+                    <h3>Test Results</h3>
+                    {% for result in results %}
+                        <div class="test-case {% if result.passed %}passed{% else %}failed{% endif %}">
+                            <p><strong>Input:</strong> {{ result.input }}</p>
+                            <p><strong>Expected:</strong> {{ result.expected }}</p>
+                            <p><strong>Got:</strong> {{ result.actual }}</p>
+                            <p><strong>Status:</strong> {{ result.passed|yesno:"Passed,Failed" }}</p>
+                            <p><strong>Console:</strong> {{ result.console_logs }}</p>
+                            {% if result.error %}
+                                <p><strong>Error:</strong> {{ result.error }}</p>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                    <p><strong>All Tests Passed:</strong> {{ all_tests_passed|yesno:"Yes,No" }}</p>
+                {% endif %}
+            </div>
+        {% endif %}
+
+        <!-- Your Solutions -->
+        <div class="problem-card">
+            <h2>Your Solutions</h2>
+            {% for solution in solutions %}
+                <div class="solution-item">
+                    <p><strong>Submitted on:</strong> {{ solution.created_at|date:"F d, Y H:i" }}</p>
+                    <pre>{{ solution.code }}</pre>
+                    <p><strong>Status:</strong> {{ solution.status|default:"Accepted" }}</p>
+                </div>
+            {% empty %}
+                <p>No solutions submitted.</p>
+            {% endfor %}
+        </div>
+
+        <!-- Other Users' Solutions -->
+        <div class="problem-card">
+            <h2>Other Users' Solutions</h2>
+            {% for solution in other_solutions %}
+                <div class="solution-item">
+                    <p class="meta">Submitted by: 
+                        <a href="{% url 'profile' %}?user={{ solution.created_by.username }}" class="user-link">
+                            <img src="{% if solution.created_by.profile and solution.created_by.profile.profile_picture %}{{ solution.created_by.profile.profile_picture.url }}{% else %}{% static 'problems/default_profile.png' %}{% endif %}" alt="{{ solution.created_by.username }}'s Profile Picture" class="profile-pic">
+                            {{ solution.created_by.username }}
+                        </a>
+                    </p>
+                    <p><strong>Submitted on:</strong> {{ solution.created_at|date:"F d, Y H:i" }}</p>
+                    <pre>{{ solution.code }}</pre>
+                    <p><strong>Status:</strong> {{ solution.status|default:"Accepted" }}</p>
+                </div>
+            {% empty %}
+                <p>No other solutions submitted.</p>
+            {% endfor %}
+        </div>
+    </div>
     {% if user.is_authenticated %}
-        <button id="like-btn" onclick="rateProblem(1)">Like</button>
-        <button id="dislike-btn" onclick="rateProblem(-1)">Dislike</button>
-        <button onclick="toggleFavorite()">{{ is_favorited|yesno:"Unfavorite,Favorite" }}</button>
-    {% endif %}
+    <script>
+        let currentVote = {{ user_rating.vote|default:0 }}; // Global state to track current vote
 
-    <style>
-        button.active {
-            background-color: #4CAF50; /* Green for active vote */
-            color: white;
+        function rateProblem(vote) {
+            let newVote = (currentVote === vote) ? 0 : vote; // Toggle off if clicking current vote
+            
+            fetch("{% url 'rate_problem' problem.id %}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: 'vote=' + newVote
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.error) {
+                    console.error('Server returned error:', data.error);
+                    alert('Failed to rate problem: ' + data.error);
+                    return;
+                }
+                document.querySelector('.meta-row .meta:nth-child(3)').innerHTML = `Likes: ${data.likes}`;
+                document.querySelector('.meta-row .meta:nth-child(4)').innerHTML = `Dislikes: ${data.dislikes}`;
+                // Update button styles and currentVote
+                currentVote = data.user_vote; // Update global state
+                document.getElementById('like-btn').classList.toggle('active', data.user_vote === 1);
+                document.getElementById('dislike-btn').classList.toggle('active', data.user_vote === -1);
+            })
+            .catch(error => {
+                console.error('Fetch error:', error);
+                alert('Error rating problem: ' + error.message);
+            });
         }
-        button {
+
+        function toggleFavorite() {
+            fetch("{% url 'toggle_favorite' problem.id %}", {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                document.getElementById('favorite-btn').textContent = data.is_favorited ? 'Unfavorite' : 'Favorite';
+            })
+            .catch(error => {
+                console.error('Fetch error:', error);
+                alert('Error toggling favorite: ' + error.message);
+            });
+        }
+
+        // Set initial button states on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('like-btn').classList.toggle('active', currentVote === 1);
+            document.getElementById('dislike-btn').classList.toggle('active', currentVote === -1);
+        });
+    </script>
+    {% endif %}
+    <style>
+        .problem-detail {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+        }
+        .problem-card {
+            background-color: #333333;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        .problem-card h1 {
+            font-size: 24px;
+            margin-bottom: 15px;
+        }
+        .problem-card h2 {
+            font-size: 20px;
+            margin-bottom: 15px;
+        }
+        .meta-row {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            align-items: baseline;
+        }
+        .meta {
+            font-size: 14px;
+            color: #cccccc;
+        }
+        .user-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .profile-pic {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #444444;
+        }
+        .rating-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .rating-actions button {
             padding: 5px 10px;
             border: none;
             border-radius: 5px;
             cursor: pointer;
-            background-color: #f0f0f0; /* Default grey */
+            background-color: #2d2d2d;
+            color: #ffffff;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+        .rating-actions button:hover {
+            background-color: #444444;
+        }
+        .rating-actions button.active {
+            background-color: #55aa55;
+            color: #ffffff;
+        }
+        .rating-actions .delete-btn {
+            background-color: #ffffff;
+            color: #000000
+        }
+        .rating-actions .delete-btn:hover {
+            background-color: #cc6666;
+        }
+        .test-case {
+            background-color: #2d2d2d;
+            border-radius: 6px;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .test-case.passed {
+            border-left: 4px solid #55aa55;
+        }
+        .test-case.failed {
+            border-left: 4px solid #aa5555;
+        }
+        .submission-form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .submission-form textarea {
+            resize: vertical;
+            min-height: 100px;
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            border: 1px solid #444444;
+            padding: 10px;
+        }
+        .form-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .solution-item {
+            background-color: #2d2d2d;
+            border-radius: 6px;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .solution-item pre {
+            background-color: #1a1a1a;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 13px;
+        }
+        .error {
+            color: #ff5555;
+            background-color: #2d2d2d;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+        @media (max-width: 600px) {
+            .problem-card {
+                padding: 15px;
+            }
+            .meta-row {
+                flex-direction: column;
+                gap: 10px;
+            }
+            .form-actions {
+                flex-direction: column;
+                gap: 10px;
+            }
+            .rating-actions {
+                flex-direction: column;
+                gap: 10px;
+            }
+            .choices__item--selectable:hover {
+                background-color: #6f6f6f !important;
+                color: #ffffff !important;
+            }
+        }
+        .meta.created {
+            display: inline-flex;
+            align-items: center;
         }
     </style>
-
-    <script>
-    let currentVote = {{ user_rating.vote|default:0 }}; // Global state to track current vote
-
-    function rateProblem(vote) {
-        let newVote = (currentVote === vote) ? 0 : vote; // Toggle off if clicking current vote
-        
-        fetch("{% url 'rate_problem' problem.id %}", {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-CSRFToken': '{{ csrf_token }}'
-            },
-            body: 'vote=' + newVote
-        })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            if (data.error) {
-                console.error('Server returned error:', data.error);
-                alert('Failed to rate problem: ' + data.error);
-                return;
-            }
-            document.getElementById('rating-display').innerHTML = `<strong>Likes:</strong> ${data.likes} | <strong>Dislikes:</strong> ${data.dislikes}`;
-            // Update button styles and currentVote
-            currentVote = data.user_vote; // Update global state
-            document.getElementById('like-btn').classList.toggle('active', data.user_vote === 1);
-            document.getElementById('dislike-btn').classList.toggle('active', data.user_vote === -1);
-        })
-        .catch(error => {
-            console.error('Fetch error:', error);
-            alert('Error rating problem: ' + error.message);
-        });
-    }
-
-    function toggleFavorite() {
-        fetch("{% url 'toggle_favorite' problem.id %}", {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}'
-            }
-        })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            document.querySelector('button[onclick="toggleFavorite()"]').textContent = data.is_favorited ? 'Unfavorite' : 'Favorite';
-        })
-        .catch(error => {
-            console.error('Fetch error:', error);
-            alert('Error toggling favorite: ' + error.message);
-        });
-    }
-
-    // Set initial button states on page load
-    document.addEventListener('DOMContentLoaded', () => {
-        document.getElementById('like-btn').classList.toggle('active', currentVote === 1);
-        document.getElementById('dislike-btn').classList.toggle('active', currentVote === -1);
-    });
-    </script>
 {% endblock %}

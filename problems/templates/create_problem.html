@@ -2,201 +2,245 @@
 {% load template_tags %}
 {% load json_tags %}
 {% block content %}
-<h2>Create Problem</h2>
-<form method="post" id="problem-form">
-    {% csrf_token %}
-    
-    <!-- Problem title and description -->
-    <h3>Problem Details</h3>
-    {% if not header_generated %}
-        {{ problem_form.title.label_tag }} {{ problem_form.title }}
-        {{ problem_form.description.label_tag }} {{ problem_form.description }}
-    {% else %}
-        <p><strong>{{ problem_form.title.label }}:</strong> {{ problem_form.title.value }}</p>
-        <p><strong>{{ problem_form.description.label }}:</strong> {{ problem_form.description.value }}</p>
-        <input type="hidden" name="title" value="{{ problem_form.title.value }}">
-        <input type="hidden" name="description" value="{{ problem_form.description.value }}">
-    {% endif %}
-    
-    <!-- Difficulty -->
-    <h3>Difficulty</h3>
-    {% if not header_generated %}
-        <label for="difficulty">Select Difficulty:</label>
-        <select name="difficulty" id="difficulty">
-            <option value="easy" {% if problem_form.difficulty.value == 'easy' %}selected{% endif %}>Easy</option>
-            <option value="medium" {% if problem_form.difficulty.value == 'medium' %}selected{% endif %}>Medium</option>
-            <option value="hard" {% if problem_form.difficulty.value == 'hard' %}selected{% endif %}>Hard</option>
-        </select>
-    {% else %}
-        <p><strong>Difficulty:</strong> {{ problem_form.difficulty.value }}</p>
-        <input type="hidden" name="difficulty" value="{{ problem_form.difficulty.value }}">
-    {% endif %}
-
-    <!-- Tags -->
-    <h3>Tags</h3>
-    {% if not header_generated %}
-        <div class="tags-container">
-            <div class="tag-section">
-                <label for="tags">Select or Add Tags:</label>
-                <select name="tags" id="tags" multiple>
-                    {% for tag in all_tags %}
-                        <option value="{{ tag.name }}" {% if tag.name in selected_tags %}selected{% endif %}>{{ tag.name }}</option>
-                    {% endfor %}
-                </select>
-                <div class="new-tags-input-wrapper">
-                    <input type="text" id="new_tags_input" placeholder="e.g., math, logic">
-                    <button type="button" onclick="addNewTags()">Add</button>
-                </div>
-                <input type="hidden" name="new_tags" id="new_tags" value="{{ new_tags|join:',' }}">
-            </div>
-        </div>
-    {% else %}
-        <p><strong>Tags:</strong>
-            {% for tag in selected_tags %}
-                {{ tag }}{% if not forloop.last %}, {% endif %}
-            {% endfor %}
-            {% if selected_tags and new_tags %}, {% endif %}
-            {% for tag in new_tags %}
-                {{ tag }}{% if not forloop.last %}, {% endif %}
-            {% endfor %}
-        </p>
-        {% for tag in selected_tags %}
-            <input type="hidden" name="tags" value="{{ tag }}">
-        {% endfor %}
-        <input type="hidden" name="new_tags" value="{{ new_tags|join:',' }}">
-    {% endif %}
-
-    <!-- Function Parameters -->
-    <h3>Function Parameters</h3>
-    <div id="input-vars">
-        {% if not header_generated %}
-            {% for var in input_vars %}
-            <div class="input-var" data-index="{{ forloop.counter0 }}">
-                <input type="text" name="input_name_{{ forloop.counter0 }}" value="{{ var.name }}" placeholder="Parameter name">
-                <select name="input_type_{{ forloop.counter0 }}">
-                    <option value="int" {% if var.type == 'int' %}selected{% endif %}>int</option>
-                    <option value="str" {% if var.type == 'str' %}selected{% endif %}>str</option>
-                    <option value="float" {% if var.type == 'float' %}selected{% endif %}>float</option>
-                    <option value="bool" {% if var.type == 'bool' %}selected{% endif %}>bool</option>
-                    <option value="list" {% if var.type == 'list' %}selected{% endif %}>list</option>
-                    <option value="dict" {% if var.type == 'dict' %}selected{% endif %}>dict</option>
-                </select>
-                <button type="button" class="remove-var" onclick="removeInputVar(this)">Remove</button>
-            </div>
-            {% empty %}
-            <div class="input-var" data-index="0">
-                <input type="text" name="input_name_0" placeholder="Parameter name">
-                <select name="input_type_0">
-                    <option value="int">int</option>
-                    <option value="str">str</option>
-                    <option value="float">float</option>
-                    <option value="bool">bool</option>
-                    <option value="list">list</option>
-                    <option value="dict">dict</option>
-                </select>
-                <button type="button" class="remove-var" onclick="removeInputVar(this)">Remove</button>
-            </div>
-            {% endfor %}
-        {% else %}
-            {% for var in input_vars %}
-            <div class="input-var">
-                <span>{{ var.name }}: {{ var.type }}</span>
-            </div>
-            {% endfor %}
-        {% endif %}
-    </div>
-    <input type="hidden" name="input_count" id="input_count" value="{{ input_vars|length|default:1 }}">
-    
-    <label for="return_type">Return Type:</label>
-    {% if not header_generated %}
-        <select name="return_type" id="return_type">
-            <option value="int" {% if return_type == 'int' %}selected{% endif %}>int</option>
-            <option value="str" {% if return_type == 'str' %}selected{% endif %}>str</option>
-            <option value="float" {% if return_type == 'float' %}selected{% endif %}>float</option>
-            <option value="bool" {% if return_type == 'bool' %}selected{% endif %}>bool</option>
-            <option value="list" {% if return_type == 'list' %}selected{% endif %}>list</option>
-            <option value="dict" {% if return_type == 'dict' %}selected{% endif %}>dict</option>
-            <option value="None" {% if return_type == 'None' %}selected{% endif %}>None</option>
-        </select>
-    {% else %}
-        <span>{{ return_type }}</span>
-        <input type="hidden" name="return_type" value="{{ return_type }}">
-    {% endif %}
-    
-    {% if not header_generated %}
-        <button type="submit" name="generate_header">Generate Function Header</button>
-    {% else %}
-        <h3>Solution Code</h3>
-        {{ problem_form.solution_code.label_tag }}
-        <textarea name="solution_code" rows="10" cols="50">{{ solution_code|default:function_header }}</textarea>
+<div class="problem-create">
+    <h2>Create Problem</h2>
+    <form method="post" id="problem-form" class="problem-form">
+        {% csrf_token %}
         
-        <h3>Test Cases</h3>
-        {{ test_case_formset.management_form }}
-        <div id="test-cases">
-            {% if test_case_data %}
-                {% for test_case in test_case_data %}
-                <div class="test-case" data-index="{{ forloop.counter0 }}">
-                    {% for var in input_vars %}
-                    <label>{{ var.name }} ({{ var.type }}):</label>
-                    <input type="text" name="form-{{ forloop.parentloop.counter0 }}-param_{{ var.name }}"
-                           value="{{ test_case.inputs|get_item:var.name }}">
-                    {% endfor %}
-                    <label>Expected Return Value ({{ return_type }}):</label>
-                    <input type="text" name="form-{{ forloop.counter0 }}-expected_output"
-                           value="{{ test_case.expected_output }}">
-                    <button type="button" class="remove-test" onclick="removeTestCase(this)">Remove</button>
+        <!-- Problem Details -->
+        <div class="problem-card">
+            <h3>Problem Details</h3>
+            {% if not header_generated %}
+                <div class="form-group">
+                    {{ problem_form.title.label_tag }} {{ problem_form.title }}
                 </div>
-                {% endfor %}
+                <div class="form-group">
+                    {{ problem_form.description.label_tag }} {{ problem_form.description }}
+                </div>
             {% else %}
-                <div class="test-case" data-index="0">
-                    {% for var in input_vars %}
-                    <label>{{ var.name }} ({{ var.type }}):</label>
-                    <input type="text" name="form-0-param_{{ var.name }}" value="">
+                <p><strong>{{ problem_form.title.label }}:</strong> {{ problem_form.title.value }}</p>
+                <p><strong>{{ problem_form.description.label }}:</strong> {{ problem_form.description.value }}</p>
+                <input type="hidden" name="title" value="{{ problem_form.title.value }}">
+                <input type="hidden" name="description" value="{{ problem_form.description.value }}">
+            {% endif %}
+        </div>
+        
+        <!-- Difficulty -->
+        <div class="problem-card">
+            <h3>Difficulty</h3>
+            {% if not header_generated %}
+                <div class="form-group">
+                    <label for="difficulty">Select Difficulty:</label>
+                    <select name="difficulty" id="difficulty">
+                        <option value="easy" {% if problem_form.difficulty.value == 'easy' %}selected{% endif %}>Easy</option>
+                        <option value="medium" {% if problem_form.difficulty.value == 'medium' %}selected{% endif %}>Medium</option>
+                        <option value="hard" {% if problem_form.difficulty.value == 'hard' %}selected{% endif %}>Hard</option>
+                    </select>
+                </div>
+            {% else %}
+                <p><strong>Difficulty:</strong> {{ problem_form.difficulty.value }}</p>
+                <input type="hidden" name="difficulty" value="{{ problem_form.difficulty.value }}">
+            {% endif %}
+        </div>
+
+        <!-- Tags -->
+        <div class="problem-card">
+            <h3>Tags</h3>
+            {% if not header_generated %}
+                <div class="tags-container">
+                    <div class="tag-section">
+                        <label for="tags">Select or Add Tags:</label>
+                        <select name="tags" id="tags" multiple>
+                            {% for tag in all_tags %}
+                                <option value="{{ tag.name }}" {% if tag.name in selected_tags %}selected{% endif %}>{{ tag.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="new-tags-input-wrapper">
+                            <input type="text" id="new_tags_input" placeholder="e.g., math, logic">
+                            <button type="button" onclick="addNewTags()">Add</button>
+                        </div>
+                        <input type="hidden" name="new_tags" id="new_tags" value="{{ new_tags|join:',' }}">
+                    </div>
+                </div>
+            {% else %}
+                <p><strong>Tags:</strong>
+                    {% for tag in selected_tags %}
+                        {{ tag }}{% if not forloop.last %}, {% endif %}
                     {% endfor %}
-                    <label>Expected Return Value ({{ return_type }}):</label>
-                    <input type="text" name="form-0-expected_output" value="">
-                    <button type="button" class="remove-test" onclick="removeTestCase(this)">Remove</button>
+                    {% if selected_tags and new_tags %}, {% endif %}
+                    {% for tag in new_tags %}
+                        {{ tag }}{% if not forloop.last %}, {% endif %}
+                    {% endfor %}
+                </p>
+                {% for tag in selected_tags %}
+                    <input type="hidden" name="tags" value="{{ tag }}">
+                {% endfor %}
+                <input type="hidden" name="new_tags" value="{{ new_tags|join:',' }}">
+            {% endif %}
+        </div>
+
+        <!-- Function Parameters -->
+        <div class="problem-card">
+            <h3>Function Parameters</h3>
+            <div id="input-vars">
+                {% if not header_generated %}
+                    {% for var in input_vars %}
+                    <div class="input-var" data-index="{{ forloop.counter0 }}">
+                        <input type="text" name="input_name_{{ forloop.counter0 }}" value="{{ var.name }}" placeholder="Parameter name">
+                        <select name="input_type_{{ forloop.counter0 }}">
+                            <option value="int" {% if var.type == 'int' %}selected{% endif %}>int</option>
+                            <option value="str" {% if var.type == 'str' %}selected{% endif %}>str</option>
+                            <option value="float" {% if var.type == 'float' %}selected{% endif %}>float</option>
+                            <option value="bool" {% if var.type == 'bool' %}selected{% endif %}>bool</option>
+                            <option value="list" {% if var.type == 'list' %}selected{% endif %}>list</option>
+                            <option value="dict" {% if var.type == 'dict' %}selected{% endif %}>dict</option>
+                        </select>
+                        <button type="button" class="remove-var" onclick="removeInputVar(this)">Remove</button>
+                    </div>
+                    {% empty %}
+                    <div class="input-var" data-index="0">
+                        <input type="text" name="input_name_0" placeholder="Parameter name">
+                        <select name="input_type_0">
+                            <option value="int">int</option>
+                            <option value="str">str</option>
+                            <option value="float">float</option>
+                            <option value="bool">bool</option>
+                            <option value="list">list</option>
+                            <option value="dict">dict</option>
+                        </select>
+                        <button type="button" class="remove-var" onclick="removeInputVar(this)">Remove</button>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    {% for var in input_vars %}
+                    <div class="input-var">
+                        <span>{{ var.name }}: {{ var.type }}</span>
+                    </div>
+                    {% endfor %}
+                {% endif %}
+            </div>
+            <input type="hidden" name="input_count" id="input_count" value="{{ input_vars|length|default:1 }}">
+            {% if not header_generated %}
+                <div class="form-group">
+                    <button type="button" class="form-button" onclick="addInputVar()">Add Parameter</button>
+                </div>
+            {% endif %}
+            <div class="form-group">
+                <label for="return_type">Return Type:</label>
+                {% if not header_generated %}
+                    <select name="return_type" id="return_type">
+                        <option value="int" {% if return_type == 'int' %}selected{% endif %}>int</option>
+                        <option value="str" {% if return_type == 'str' %}selected{% endif %}>str</option>
+                        <option value="float" {% if return_type == 'float' %}selected{% endif %}>float</option>
+                        <option value="bool" {% if return_type == 'bool' %}selected{% endif %}>bool</option>
+                        <option value="list" {% if return_type == 'list' %}selected{% endif %}>list</option>
+                        <option value="dict" {% if return_type == 'dict' %}selected{% endif %}>dict</option>
+                        <option value="None" {% if return_type == 'None' %}selected{% endif %}>None</option>
+                    </select>
+                {% else %}
+                    <span>{{ return_type }}</span>
+                    <input type="hidden" name="return_type" value="{{ return_type }}">
+                {% endif %}
+            </div>
+            {% if not header_generated %}
+                <div class="form-group">
+                    <button type="submit" name="generate_header" class="form-button">Generate Function Header</button>
                 </div>
             {% endif %}
         </div>
-        <button type="button" onclick="addTestCase()">Add Test Case</button>
         
-        <input type="hidden" name="input_vars" value='{{ input_vars|json_dumps|safe }}'>
-        
-        <button type="submit" name="run">Run Code</button>
-        <button type="submit" name="save" id="submit-problem" {% if not all_tests_passed %}disabled{% endif %}>Submit Problem</button>
-        
-        <h3>Test Results:</h3>
-        {% if results %}
-            {% for result in results %}
-                <div class="result">
-                    <p><strong>Input:</strong> {{ result.input|default:"N/A" }}</p>
-                    <p><strong>Expected:</strong> {{ result.expected|default:"N/A" }}</p>
-                    <p><strong>Actual:</strong> {{ result.actual|default:"N/A" }}</p>
-                    <p><strong>Result:</strong> 
-                        {% if result.passed %}
-                            <span class="pass">Passed ✓</span>
-                        {% else %}
-                            <span class="fail">Failed ✗</span>
-                        {% endif %}
-                    </p>
-                    <p><strong>Logs:</strong> <pre>{{ result.console_logs|default:"No logs" }}</pre></p>
-                    <p><strong>Code Submitted:</strong> <pre>{{ solution_code }}</pre></p>
-                    {% if result.error %}
-                        <p><strong>Error:</strong> {{ result.error }}</p>
+        {% if header_generated %}
+            <!-- Solution Code -->
+            <div class="problem-card">
+                <h3>Solution Code</h3>
+                <div class="form-group">
+                    {{ problem_form.solution_code.label_tag }}
+                    <textarea id="create-textarea" name="solution_code" rows="10" cols="50">{{ solution_code|default:function_header }}</textarea>
+                </div>
+            </div>
+            
+            <!-- Test Cases -->
+            <div class="problem-card">
+                <h3>Test Cases</h3>
+                {{ test_case_formset.management_form }}
+                <div id="test-cases">
+                    {% if test_case_data %}
+                        {% for test_case in test_case_data %}
+                        <div class="test-case" data-index="{{ forloop.counter0 }}">
+                            {% for var in input_vars %}
+                            <div class="form-group">
+                                <label>{{ var.name }} ({{ var.type }}):</label>
+                                <input type="text" name="form-{{ forloop.parentloop.counter0 }}-param_{{ var.name }}"
+                                       value="{{ test_case.inputs|get_item:var.name }}">
+                            </div>
+                            {% endfor %}
+                            <div class="form-group">
+                                <label>Expected Return Value ({{ return_type }}):</label>
+                                <input type="text" name="form-{{ forloop.counter0 }}-expected_output"
+                                       value="{{ test_case.expected_output }}">
+                            </div>
+                            <button type="button" class="remove-test" onclick="removeTestCase(this)">Remove</button>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="test-case" data-index="0">
+                            {% for var in input_vars %}
+                            <div class="form-group">
+                                <label>{{ var.name }} ({{ var.type }}):</label>
+                                <input type="text" name="form-0-param_{{ var.name }}" value="">
+                            </div>
+                            {% endfor %}
+                            <div class="form-group">
+                                <label>Expected Return Value ({{ return_type }}):</label>
+                                <input type="text" name="form-0-expected_output" value="">
+                            </div>
+                            <button type="button" class="remove-test" onclick="removeTestCase(this)">Remove</button>
+                        </div>
                     {% endif %}
                 </div>
-            {% endfor %}
-        {% else %}
-            <p>No results available.</p>
+                <button type="button" class="form-button" onclick="addTestCase()">Add Test Case</button>
+            </div>
+            
+            <div class="problem-card">
+                <input type="hidden" name="input_vars" value='{{ input_vars|json_dumps|safe }}'>
+                <div class="form-actions">
+                    <button type="submit" name="run" class="form-button">Run Code</button>
+                    <button type="submit" name="save" id="submit-problem" class="form-button" {% if not all_tests_passed %}disabled{% endif %}>Submit Problem</button>
+                </div>
+                
+                <h3>Test Results</h3>
+                {% if results %}
+                    {% for result in results %}
+                        <div class="result">
+                            <p><strong>Input:</strong> {{ result.input|default:"N/A" }}</p>
+                            <p><strong>Expected:</strong> {{ result.expected|default:"N/A" }}</p>
+                            <p><strong>Actual:</strong> {{ result.actual|default:"N/A" }}</p>
+                            <p><strong>Result:</strong> 
+                                {% if result.passed %}
+                                    <span class="pass">Passed ✓</span>
+                                {% else %}
+                                    <span class="fail">Failed ✗</span>
+                                {% endif %}
+                            </p>
+                            <p><strong>Logs:</strong> <pre>{{ result.console_logs|default:"No logs" }}</pre></p>
+                            <p><strong>Code Submitted:</strong> <pre>{{ solution_code }}</pre></p>
+                            {% if result.error %}
+                                <p><strong>Error:</strong> {{ result.error }}</p>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p>No results available.</p>
+                {% endif %}
+            </div>
         {% endif %}
-    {% endif %}
-</form>
+    </form>
+</div>
 
-{% if not header_generated %}
-<button type="button" onclick="addInputVar()">Add Parameter</button>
-<script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
+<!-- Choices.js -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
+
 <script>
     let inputCount = {{ input_vars|length|default:1 }};
     let choicesInstance;
@@ -250,7 +294,7 @@
     function addNewTags() {
         const input = document.getElementById('new_tags_input');
         const newTags = input.value.split(',').map(tag => tag.trim()).filter(tag => tag);
-        const existingTags = choicesInstance.getValue(true); // Get current selected tags
+        const existingTags = choicesInstance.getValue(true);
         
         newTags.forEach(tag => {
             if (!existingTags.includes(tag)) {
@@ -263,7 +307,7 @@
     }
 
     function updateNewTagsHidden() {
-        const allSelectedTags = choicesInstance.getValue(true); // All tags in the dropdown
+        const allSelectedTags = choicesInstance.getValue(true);
         const existingTags = [{% for tag in all_tags %}'{{ tag.name }}'{% if not forloop.last %}, {% endif %}{% endfor %}];
         const newTags = allSelectedTags.filter(tag => !existingTags.includes(tag));
         document.getElementById('new_tags').value = newTags.join(',');
@@ -290,7 +334,6 @@
         console.log('Form data on submit:', Object.fromEntries(formData.entries()));
     });
 </script>
-{% endif %}
 
 {% if header_generated %}
 <script>
@@ -301,11 +344,15 @@
         div.setAttribute('data-index', testCaseCount);
         div.innerHTML = `
             {% for var in input_vars %}
-            <label>{{ var.name }} ({{ var.type }}):</label>
-            <input type="text" name="form-${testCaseCount}-param_{{ var.name }}" value="">
+            <div class="form-group">
+                <label>{{ var.name }} ({{ var.type }}):</label>
+                <input type="text" name="form-${testCaseCount}-param_{{ var.name }}" value="">
+            </div>
             {% endfor %}
-            <label>Expected Return Value ({{ return_type }}):</label>
-            <input type="text" name="form-${testCaseCount}-expected_output" value="">
+            <div class="form-group">
+                <label>Expected Return Value ({{ return_type }}):</label>
+                <input type="text" name="form-${testCaseCount}-expected_output" value="">
+            </div>
             <button type="button" class="remove-test" onclick="removeTestCase(this)">Remove</button>
         `;
         document.getElementById('test-cases').appendChild(div);
@@ -355,7 +402,7 @@
         submitButton.disabled = !allPassed;
     }
 
-    document.querySelector('textarea[name="solution_code"]').addEventListener('keydown', function(e) {
+    document.getElementById('create-textarea').addEventListener('keydown', function(e) {
         if (e.key === 'Tab') {
             e.preventDefault();
             const start = this.selectionStart;
@@ -391,52 +438,128 @@
 {% endif %}
 
 <style>
-    .input-var, .test-case {
+    .problem-create {
+        display: flex;
+        flex-direction: column;
+        gap: 30px;
+        background-color: #1a1a1a;
+        padding: 20px;
+        color: #cccccc;
+    }
+    .problem-card {
+        background-color: #333333;
+        border-radius: 8px;
+        padding: 20px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+    h2, h3 {
+        color: #ffffff;
+        margin-bottom: 15px;
+    }
+    .problem-form {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
         margin-bottom: 10px;
     }
-    .input-var input[type="text"], .input-var select, .test-case input[type="text"] {
-        margin-right: 10px;
-        margin-bottom: 5px;
+    label {
+        color: #cccccc;
+        font-size: 14px;
     }
-    .test-case {
-        border: 1px solid #ccc;
-        padding: 10px;
-    }
-    .result {
-        border: 1px solid #ddd;
-        padding: 10px;
-        margin-bottom: 10px;
-    }
-    pre {
-        background-color: #f5f5f5;
-        padding: 10px;
-        border-radius: 5px;
-        font-family: monospace;
+    input[type="text"], select, textarea {
+        background-color: #1a1a1a;
+        color: #ffffff;
+        border: 1px solid #444444;
+        border-radius: 4px;
+        padding: 8px;
+        font-size: 14px;
     }
     textarea {
-        background-color: #f5f5f5;
-        padding: 10px;
-        border-radius: 5px;
-        font-family: monospace;
+        font-family: 'Courier New', Courier, monospace;
+        resize: vertical;
+        min-height: 100px;
         white-space: pre-wrap;
         tab-size: 4;
     }
+    select {
+        appearance: none;
+        padding-right: 24px;
+        background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2212%22%20height%3D%228%22%20viewBox%3D%220%200%2012%208%22%20fill%3D%22none%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%3Cpath%20d%3D%22M1%201L6%206L11%201%22%20stroke%3D%22%23cccccc%22%20stroke-width%3D%222%22/%3E%3C/svg%3E');
+        background-repeat: no-repeat;
+        background-position: right 8px center;
+    }
+    .form-button {
+        background-color: #333333;
+        color: #cccccc;
+        border: 1px solid #444444;
+        border-radius: 6px;
+        padding: 8px 16px;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+    .form-button:hover {
+        background-color: #444444;
+    }
+    .form-button:disabled {
+        background-color: #555555;
+        color: #888888;
+        cursor: not-allowed;
+    }
+    .input-var, .test-case {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 15px;
+        background-color: #2d2d2d;
+        border: 1px solid #444444;
+        border-radius: 6px;
+        padding: 10px;
+    }
+    .input-var input[type="text"], .input-var select {
+        flex: 1;
+        min-width: 120px;
+    }
+    .test-case {
+        flex-direction: column;
+    }
+    .result {
+        background-color: #2d2d2d;
+        border: 1px solid #444444;
+        border-radius: 6px;
+        padding: 10px;
+        margin-bottom: 15px;
+    }
+    pre {
+        background-color: #1a1a1a;
+        color: #ffffff;
+        padding: 10px;
+        border-radius: 4px;
+        font-family: monospace;
+        overflow-x: auto;
+    }
     .pass {
-        color: green;
+        color: #55aa55;
         font-weight: bold;
     }
     .fail {
-        color: red;
+        color: #aa5555;
         font-weight: bold;
     }
-    #submit-problem:disabled {
-        background-color: #cccccc;
-        cursor: not-allowed;
-    }
     .remove-var, .remove-test {
-        margin-left: 10px;
-        color: red;
+        background-color: #aa5555;
+        color: #ffffff;
+        border: none;
+        border-radius: 4px;
+        padding: 6px 10px;
         cursor: pointer;
+    }
+    .remove-var:hover, .remove-test:hover {
+        background-color: #cc6666;
     }
     .tags-container {
         display: flex;
@@ -446,45 +569,102 @@
     .tag-section {
         display: flex;
         flex-direction: column;
-        gap: 5px;
-    }
-    #tags {
-        width: 300px;
+        gap: 8px;
     }
     .choices__inner {
-        min-height: 34px;
-        padding: 5px;
-        border: 1px solid #ccc;
+        background-color: #1a1a1a;
+        border: 1px solid #444444;
         border-radius: 4px;
-        background-color: #fff;
+        color: #ffffff;
+        padding: 5px;
+        min-height: 34px;
+        transition: border-color 0.2s;
+    }
+    .choices__inner.is-focused {
+        border-color: #555555;
+    }
+    .choices__input {
+        background-color: #1a1a1a;
+        color: #ffffff;
+        border: none;
+        padding: 2px 5px;
+        font-size: 14px;
+    }
+    .choices__input::placeholder {
+        color: #cccccc;
+        opacity: 1;
     }
     .choices__list--multiple .choices__item {
-        background-color: #007bff;
-        border: 1px solid #0056b3;
+        background-color: #444444;
+        border: 1px solid #555555;
         border-radius: 3px;
+        color: #ffffff;
+    }
+    .choices__list--dropdown {
+        background-color: #1a1a1a;
+        border: 1px solid #444444;
+        border-radius: 4px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        z-index: 1000;
+    }
+    .choices__list--dropdown .choices__list {
+        background-color: transparent;
+        border: none;
+    }
+    .choices__item {
+        color: #ffffff;
+        background-color: #1a1a1a;
+    }
+    .choices__item--selectable.is-highlighted {
+        background-color: #444444;
+    }
+    .choices__item--disabled {
+        color: #888888;
+        background-color: #2d2d2d;
     }
     .new-tags-input-wrapper {
         display: flex;
-        gap: 5px;
-        margin-top: 5px;
+        gap: 8px;
+        margin-top: 8px;
     }
-    #new_tags_input {
-        width: 230px;
-        padding: 5px;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        font-size: 14px;
+    .new-tags-input-wrapper input {
+        flex: 1;
+        min-width: 200px;
     }
     .new-tags-input-wrapper button {
-        padding: 5px 10px;
-        border: 1px solid #ccc;
+        background-color: #333333;
+        color: #cccccc;
+        border: 1px solid #444444;
         border-radius: 4px;
-        background-color: #f8f9fa;
-        cursor: pointer;
+        padding: 6px 12px;
     }
     .new-tags-input-wrapper button:hover {
-        background-color: #e9ecef;
+        background-color: #444444;
+    }
+    .form-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 10px;
+    }
+    @media (max-width: 600px) {
+        .problem-create {
+            padding: 15px;
+        }
+        .problem-card {
+            padding: 15px;
+        }
+        .input-var, .test-case {
+            flex-direction: column;
+        }
+        .form-group {
+            gap: 5px;
+        }
+        .form-actions {
+            flex-direction: column;
+        }
+        .choices__list--dropdown {
+            width: 100%;
+        }
     }
 </style>
-
 {% endblock %}

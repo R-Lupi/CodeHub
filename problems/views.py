@@ -4,148 +4,161 @@ import time
 import requests
 import re
 import platform
+import os
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.models import User  # Added this import
+from django.contrib.auth.models import User
 from django.http import JsonResponse
-from .models import Problem, Tag, Solution, TestCase, ProblemRating, FavoriteProblem
-from .forms import ProblemForm, TestCaseFormSet
+from django.db.models import Count, Case, When, IntegerField, Q
+from .models import Problem, Tag, Solution, TestCase, ProblemRating, FavoriteProblem, Profile
+from .forms import ProblemForm, TestCaseFormSet, ProfileForm
 
 def run_code_in_docker(code, test_cases, input_vars, language='python'):
     results = []
-    if platform.system() == 'Windows':
-        base_url = 'npipe:////./pipe/docker_engine'
-    else:
-        base_url = 'unix:///var/run/docker.sock'
-    client = docker.DockerClient(base_url=base_url)
-
-    type_converters = {
-        'int': int,
-        'float': float,
-        'str': str,
-        'bool': lambda x: str(x).lower() == 'true',
-        'list': json.loads,
-        'dict': json.loads,
-        'None': lambda x: None if str(x).lower() == 'null' else x
-    }
-    type_checks = {
-        'int': int,
-        'float': float,
-        'str': str,
-        'bool': bool,
-        'list': list,
-        'dict': dict,
-        'None': type(None)
-    }
-
-    for test_case in test_cases:
-        input_json = test_case.input_value
-        expected_output = test_case.expected_output  # Now a JSONField
-
-        input_dict = json.loads(input_json)
-        for var in input_vars:
-            if var['name'] in input_dict:
-                value = input_dict[var['name']]
-                expected_type = type_checks.get(var['type'], str)
-                converter = type_converters.get(var['type'], str)
-                if not isinstance(value, expected_type):
-                    try:
-                        input_dict[var['name']] = converter(value)
-                    except (ValueError, json.JSONDecodeError, TypeError):
-                        input_dict[var['name']] = value
-
-        input_data_str = "{"
-        for key, value in input_dict.items():
-            if isinstance(value, bool):
-                input_data_str += f'"{key}": {"True" if value else "False"}, '
-            elif value is None:
-                input_data_str += f'"{key}": None, '
-            elif isinstance(value, (list, dict)):
-                input_data_str += f'"{key}": {json.dumps(value)}, '
-            else:
-                input_data_str += f'"{key}": {repr(value)}, '
-        input_data_str = input_data_str.rstrip(", ") + "}"
-
-        wrapper_code = (
-            "import json\n"
-            "import sys\n\n"
-            f"{code}\n\n"
-            f"input_data = {input_data_str}\n"
-            "print(\"Parameters: \" + str(input_data))\n"
-            "result = solution(**input_data)\n"
-            "print(\"RESULT_SEPARATOR:\" + json.dumps(result))"
-        )
-        print(f"Running wrapper code:\n{wrapper_code}")
+    try:
+        if platform.system() == 'Windows':
+            base_url = 'npipe:////./pipe/docker_engine'
+        else:
+            base_url = os.environ.get('DOCKER_HOST', 'unix:///var/run/docker.sock')
+        
+        client = docker.DockerClient(base_url=base_url, timeout=10)
+        
         try:
-            container = client.containers.create(
-                image='python:3.9-slim',
-                command='python -c "{}"'.format(wrapper_code.replace('"', '\\"')),
-                mem_limit='128m',
-                cpu_quota=10000,
-                network_disabled=True,
-                working_dir='/tmp',
-            )
-            container.start()
-            result = container.wait(timeout=5)
-            logs = container.logs(stdout=True, stderr=True).decode().strip()
-            container.remove()
-
-            log_lines = logs.split('\n')
-            console_logs = []
-            actual_output_raw = ""
-
-            for line in log_lines:
-                if line.startswith("RESULT_SEPARATOR:"):
-                    actual_output_raw = line.replace("RESULT_SEPARATOR:", "").strip()
-                else:
-                    console_logs.append(line)
-
-            try:
-                actual_output = json.loads(actual_output_raw)
-            except json.JSONDecodeError:
-                actual_output = actual_output_raw
-
-            console_logs_str = "\n".join(console_logs).strip() if console_logs else "No console output"
-            print(f"Container logs:\n{logs}")
-
-            return_type = test_case.__dict__.get('return_type', 'str')
-            converter = type_converters.get(return_type, str)
-            try:
-                expected_parsed = expected_output if isinstance(expected_output, (list, dict)) else json.loads(expected_output)
-            except (json.JSONDecodeError, TypeError):
-                expected_parsed = expected_output
-
-            if return_type == 'None':
-                expected_parsed = None if expected_output in [None, 'null', ''] else expected_output
-                actual_output = None if actual_output in [None, ''] else actual_output
-            elif return_type == 'str':
-                actual_output = str(actual_output)
-            elif return_type in ['int', 'float', 'bool']:
-                actual_output = converter(actual_output) if isinstance(actual_output, (str, int, float, bool)) else actual_output
-
-            passed = actual_output == expected_parsed
-            print(f"Debug: actual_output={actual_output} (type={type(actual_output)}), expected_parsed={expected_parsed} (type={type(expected_parsed)}), passed={passed}, return_type={return_type}")
-
-            results.append({
-                'input': input_json,
-                'expected': json.dumps(expected_output) if isinstance(expected_output, (list, dict)) else str(expected_output),
-                'actual': actual_output_raw,
-                'passed': passed,
-                'console_logs': console_logs_str
-            })
-        except docker.errors.ContainerError as e:
-            results.append({'error': f"Container error: {str(e)}"})
+            client.ping()
+            print("Docker daemon connection successful")
         except docker.errors.APIError as e:
-            results.append({'error': f"Execution timed out or failed: {str(e)}"})
-        except Exception as e:
-            results.append({'error': f"Unexpected error: {str(e)}"})
+            print(f"Failed to connect to Docker daemon: {str(e)}")
+            return [{'error': 'Cannot connect to Docker service. Please ensure Docker is running.'}]
+
+        type_converters = {
+            'int': int,
+            'float': float,
+            'str': str,
+            'bool': lambda x: str(x).lower() == 'true',
+            'list': json.loads,
+            'dict': json.loads,
+            'None': lambda x: None if str(x).lower() == 'null' else x
+        }
+        type_checks = {
+            'int': int,
+            'float': float,
+            'str': str,
+            'bool': bool,
+            'list': list,
+            'dict': dict,
+            'None': type(None)
+        }
+
+        for test_case in test_cases:
+            input_json = test_case.input_value
+            expected_output = test_case.expected_output
+
+            input_dict = json.loads(input_json)
+            for var in input_vars:
+                if var['name'] in input_dict:
+                    value = input_dict[var['name']]
+                    expected_type = type_checks.get(var['type'], str)
+                    converter = type_converters.get(var['type'], str)
+                    if not isinstance(value, expected_type):
+                        try:
+                            input_dict[var['name']] = converter(value)
+                        except (ValueError, json.JSONDecodeError, TypeError):
+                            input_dict[var['name']] = value
+
+            input_data_str = "{"
+            for key, value in input_dict.items():
+                if isinstance(value, bool):
+                    input_data_str += f'"{key}": {"True" if value else "False"}, '
+                elif value is None:
+                    input_data_str += f'"{key}": None, '
+                elif isinstance(value, (list, dict)):
+                    input_data_str += f'"{key}": {json.dumps(value)}, '
+                else:
+                    input_data_str += f'"{key}": {repr(value)}, '
+            input_data_str = input_data_str.rstrip(", ") + "}"
+
+            wrapper_code = (
+                "import json\n"
+                "import sys\n\n"
+                f"{code}\n\n"
+                f"input_data = {input_data_str}\n"
+                "print(\"Parameters: \" + str(input_data))\n"
+                "result = solution(**input_data)\n"
+                "print(\"RESULT_SEPARATOR:\" + json.dumps(result))"
+            )
+            print(f"Running wrapper code:\n{wrapper_code}")
+            try:
+                container = client.containers.create(
+                    image='python:3.9-slim',
+                    command='python -c "{}"'.format(wrapper_code.replace('"', '\\"')),
+                    mem_limit='128m',
+                    cpu_quota=10000,
+                    network_disabled=True,
+                    working_dir='/tmp',
+                )
+                container.start()
+                result = container.wait(timeout=5)
+                logs = container.logs(stdout=True, stderr=True).decode().strip()
+                container.remove()
+
+                log_lines = logs.split('\n')
+                console_logs = []
+                actual_output_raw = ""
+
+                for line in log_lines:
+                    if line.startswith("RESULT_SEPARATOR:"):
+                        actual_output_raw = line.replace("RESULT_SEPARATOR:", "").strip()
+                    else:
+                        console_logs.append(line)
+
+                try:
+                    actual_output = json.loads(actual_output_raw)
+                except json.JSONDecodeError:
+                    actual_output = actual_output_raw
+
+                console_logs_str = "\n".join(console_logs).strip() if console_logs else "No console output"
+                print(f"Container logs:\n{logs}")
+
+                return_type = test_case.__dict__.get('return_type', 'str')
+                converter = type_converters.get(return_type, str)
+                try:
+                    expected_parsed = expected_output if isinstance(expected_output, (list, dict)) else json.loads(expected_output)
+                except (json.JSONDecodeError, TypeError):
+                    expected_parsed = expected_output
+
+                if return_type == 'None':
+                    expected_parsed = None if expected_output in [None, 'null', ''] else expected_output
+                    actual_output = None if actual_output in [None, ''] else actual_output
+                elif return_type == 'str':
+                    actual_output = str(actual_output)
+                elif return_type in ['int', 'float', 'bool']:
+                    actual_output = converter(actual_output) if isinstance(actual_output, (str, int, float, bool)) else actual_output
+
+                passed = actual_output == expected_parsed
+                print(f"Debug: actual_output={actual_output} (type={type(actual_output)}), expected_parsed={expected_parsed} (type={type(expected_parsed)}), passed={passed}, return_type={return_type}")
+
+                results.append({
+                    'input': input_json,
+                    'expected': json.dumps(expected_output) if isinstance(expected_output, (list, dict)) else str(expected_output),
+                    'actual': actual_output_raw,
+                    'passed': passed,
+                    'console_logs': console_logs_str
+                })
+            except docker.errors.ContainerError as e:
+                results.append({'error': f"Container error: {str(e)}"})
+            except docker.errors.APIError as e:
+                results.append({'error': f"Execution timed out or failed: {str(e)}"})
+            except Exception as e:
+                results.append({'error': f"Unexpected error: {str(e)}"})
+    except Exception as e:
+        print(f"Docker client initialization failed: {str(e)}")
+        results.append({'error': f"Failed to initialize Docker client: {str(e)}"})
 
     return results
 
 def generate_function_header(input_vars, return_type):
-    """Generate a function header from input variables and return type"""
     params = [f"{var['name']}: {var['type']}" for var in input_vars if var['name'] and var['type']]
     return f"def solution({', '.join(params)}) -> {return_type}:\n"
 
@@ -161,62 +174,73 @@ def signup(request):
     return render(request, 'signup.html', {'form': form})
 
 def problem_list(request):
-    tag = request.GET.get('tag')
-    query = request.GET.get('q')
-    liked = request.GET.get('liked')
-    disliked = request.GET.get('disliked')
-    favorited = request.GET.get('favorited')
+    search_query = request.GET.get('q', '')
+    selected_tags = request.GET.get('tags', '').split(',') if request.GET.get('tags') else []
+    selected_tags = [tag for tag in selected_tags if tag]
+    liked = request.GET.get('liked') == 'true'
+    disliked = request.GET.get('disliked') == 'true'
+    favorited = request.GET.get('favorited') == 'true'
 
-    problems = Problem.objects.all()
+    problems = Problem.objects.all().annotate(
+        likes=Count('ratings', filter=Q(ratings__vote=1)),
+        dislikes=Count('ratings', filter=Q(ratings__vote=-1))
+    ).distinct()
 
-    # Text search filter
-    if query:
-        problems = problems.filter(title__icontains=query) | problems.filter(description__icontains=query)
+    # Apply search query filter
+    if search_query:
+        problems = problems.filter(title__icontains=search_query)
 
-    # Tag filter
-    if tag:
-        problems = problems.filter(tags__name=tag)
+    # Apply tag filter
+    if selected_tags:
+        for tag in selected_tags:
+            problems = problems.filter(tags__name=tag)
 
-    # Interaction filters (authenticated users only)
+    # Apply liked/disliked/favorited filters for authenticated users
     if request.user.is_authenticated:
         if liked:
             problems = problems.filter(ratings__user=request.user, ratings__vote=1)
+            print(f"Liked filter applied. Problems: {problems.count()}")
         if disliked:
             problems = problems.filter(ratings__user=request.user, ratings__vote=-1)
+            print(f"Disliked filter applied. Problems: {problems.count()}")
         if favorited:
+            # Debug: Check if there are any FavoriteProblem entries for the user
+            favorite_entries = FavoriteProblem.objects.filter(user=request.user)
+            print(f"FavoriteProblem entries for user {request.user.username}: {favorite_entries.count()}")
+            if favorite_entries.exists():
+                print(f"Favorited problems IDs: {[fav.problem_id for fav in favorite_entries]}")
             problems = problems.filter(favorited_by__user=request.user)
+            print(f"Favorited filter applied. Problems: {problems.count()}")
 
-    tags = Tag.objects.all()
-    return render(request, 'problem_list.html', {'problems': problems, 'tags': tags})
+    all_tags = Tag.objects.all()
+    return render(request, 'problem_list.html', {
+        'problems': problems,
+        'search_query': search_query,
+        'selected_tags': selected_tags,
+        'all_tags': all_tags,
+    })
+
 
 def problem_detail(request, problem_id):
     problem = get_object_or_404(Problem, id=problem_id)
-    user_solution = None
-    all_solutions = Solution.objects.filter(problem=problem).order_by('-created_at')
-    user_rating = None
-    is_favorited = False
-    if request.user.is_authenticated:
-        user_solution = Solution.objects.filter(problem=problem, created_by=request.user).order_by('-created_at').first()
-        user_rating = ProblemRating.objects.filter(problem=problem, user=request.user).first()
-        is_favorited = FavoriteProblem.objects.filter(problem=problem, user=request.user).exists()
+    solutions = Solution.objects.filter(problem=problem, created_by=request.user) if request.user.is_authenticated else []
+    other_solutions = Solution.objects.filter(problem=problem).exclude(created_by=request.user) if request.user.is_authenticated else Solution.objects.filter(problem=problem)
+    user_solution = Solution.objects.filter(problem=problem, created_by=request.user).order_by('-created_at').first()
+    initial_code = user_solution.code if user_solution else problem.function_header
     likes = problem.ratings.filter(vote=1).count()
     dislikes = problem.ratings.filter(vote=-1).count()
-    net_rating = likes - dislikes
     return render(request, 'problem_detail.html', {
         'problem': problem,
-        'user_solution': user_solution,
-        'all_solutions': all_solutions,
+        'solutions': solutions,
+        'other_solutions': other_solutions,
         'function_header': problem.function_header,
+        'code': initial_code,
         'input_vars': problem.input_vars,
         'return_type': problem.return_type,
         'likes': likes,
         'dislikes': dislikes,
-        'net_rating': net_rating,
-        'user_rating': user_rating,
-        'is_favorited': is_favorited,
     })
 
-@login_required
 def create_problem(request):
     if request.method == 'POST':
         print(f"Full POST data: {request.POST}")
@@ -377,7 +401,6 @@ def create_problem(request):
                             tag, _ = Tag.objects.get_or_create(name=tag_name.strip())
                             problem.tags.add(tag)
                         
-                        # Save test cases to the database
                         for tc in test_cases:
                             TestCase.objects.create(
                                 problem=problem,
@@ -439,21 +462,32 @@ def submit_solution(request, problem_id):
     test_cases = problem.test_cases.all()
     user_solution = Solution.objects.filter(problem=problem, created_by=request.user).order_by('-created_at').first()
     initial_code = user_solution.code if user_solution else function_header
+    solutions = Solution.objects.filter(problem=problem, created_by=request.user) if request.user.is_authenticated else []
+    other_solutions = Solution.objects.filter(problem=problem).exclude(created_by=request.user) if request.user.is_authenticated else Solution.objects.filter(problem=problem)
+    likes = problem.ratings.filter(vote=1).count()
+    dislikes = problem.ratings.filter(vote=-1).count()
+
+    context = {
+        'problem': problem,
+        'function_header': function_header,
+        'code': initial_code,
+        'input_vars': problem.input_vars,
+        'return_type': problem.return_type,
+        'solutions': solutions,
+        'other_solutions': other_solutions,
+        'likes': likes,
+        'dislikes': dislikes,
+    }
 
     if request.method == 'POST':
         code = request.POST.get('code', '').strip()
+        context['code'] = code
         print(f"POST request received. Code: {code if code else 'None'}")
         
         if not code:
             print("No code provided")
-            return render(request, 'submit_solution.html', {
-                'problem': problem,
-                'function_header': function_header,
-                'code': code,
-                'error': 'Please enter code to run or submit.',
-                'input_vars': problem.input_vars,
-                'return_type': problem.return_type
-            })
+            context['error'] = 'Please enter code to run or submit.'
+            return render(request, 'problem_detail.html', context)
 
         test_cases_with_return_type = [
             type('TestCase', (), {
@@ -466,16 +500,9 @@ def submit_solution(request, problem_id):
 
         if not test_cases_with_return_type:
             print("No test cases available for this problem")
-            return render(request, 'submit_solution.html', {
-                'problem': problem,
-                'function_header': function_header,
-                'code': code,
-                'error': 'No test cases defined for this problem.',
-                'input_vars': problem.input_vars,
-                'return_type': problem.return_type
-            })
+            context['error'] = 'No test cases defined for this problem.'
+            return render(request, 'problem_detail.html', context)
 
-        # Update attempted_by: Add user if this is their first attempt
         if request.user not in problem.attempted_by.all():
             problem.attempted_by.add(request.user)
             print(f"User {request.user.username} marked as attempted problem {problem.id} for the first time")
@@ -488,34 +515,18 @@ def submit_solution(request, problem_id):
                 all_tests_passed = all(result.get('passed', False) for result in results) if results else False
                 if not results:
                     print("No results returned from run_code_in_docker")
-                    return render(request, 'submit_solution.html', {
-                        'problem': problem,
-                        'function_header': function_header,
-                        'code': code,
-                        'error': 'No test results generated. Check your code or test cases.',
-                        'input_vars': problem.input_vars,
-                        'return_type': problem.return_type
-                    })
-                print(f"Processed results: {results}, all_tests_passed: {all_tests_passed}")
-                return render(request, 'submit_solution.html', {
-                    'problem': problem,
-                    'function_header': function_header,
-                    'code': code,
+                    context['error'] = 'No test results generated. Check your code or test cases.'
+                    return render(request, 'problem_detail.html', context)
+                context.update({
                     'results': results,
                     'all_tests_passed': all_tests_passed,
-                    'input_vars': problem.input_vars,
-                    'return_type': problem.return_type
                 })
+                print(f"Processed results: {results}, all_tests_passed: {all_tests_passed}")
+                return render(request, 'problem_detail.html', context)
             except Exception as e:
                 print(f"Error during code execution: {str(e)}")
-                return render(request, 'submit_solution.html', {
-                    'problem': problem,
-                    'function_header': function_header,
-                    'code': code,
-                    'error': f"Failed to run code: {str(e)}",
-                    'input_vars': problem.input_vars,
-                    'return_type': problem.return_type
-                })
+                context['error'] = f"Failed to run code: {str(e)}"
+                return render(request, 'problem_detail.html', context)
         elif 'submit' in request.POST:
             print(f"Submit button clicked. Executing code:\n{code}")
             try:
@@ -530,62 +541,55 @@ def submit_solution(request, problem_id):
                     else:
                         Solution.objects.create(problem=problem, code=code, created_by=request.user)
                         print("Created new solution")
-                    # Update solved_by: Add user if this is their first successful solution
                     if request.user not in problem.solved_by.all():
                         problem.solved_by.add(request.user)
                         print(f"User {request.user.username} marked as solved problem {problem.id} for the first time")
                     return redirect('problem_detail', problem_id=problem.id)
-                return render(request, 'submit_solution.html', {
-                    'problem': problem,
-                    'function_header': function_header,
-                    'code': code,
+                context.update({
                     'results': results,
                     'all_tests_passed': all_tests_passed,
                     'error': 'Solution failed some test cases.',
-                    'input_vars': problem.input_vars,
-                    'return_type': problem.return_type
                 })
+                return render(request, 'problem_detail.html', context)
             except Exception as e:
                 print(f"Error during submission: {str(e)}")
-                return render(request, 'submit_solution.html', {
-                    'problem': problem,
-                    'function_header': function_header,
-                    'code': code,
-                    'error': f"Error submitting code: {str(e)}",
-                    'input_vars': problem.input_vars,
-                    'return_type': problem.return_type
-                })
+                context['error'] = f"Error submitting code: {str(e)}"
+                return render(request, 'problem_detail.html', context)
     else:
         print("GET request to submit_solution")
-        return render(request, 'submit_solution.html', {
-            'problem': problem,
-            'function_header': function_header,
-            'code': initial_code,
-            'input_vars': problem.input_vars,
-            'return_type': problem.return_type
-        })
+        return render(request, 'problem_detail.html', context)
 
-@login_required
 def profile(request):
-    username = request.GET.get('user', request.user.username)
-    try:
-        user = User.objects.get(username=username)
-    except User.DoesNotExist:
-        user = request.user  # Fallback to current user if specified user not found
-
-    problems_created = user.problems.count()
-    problems_solved = user.solutions.values('problem').distinct().count()
-    favorite_problems = user.favorite_problems.all()
-    user_solutions = Solution.objects.filter(created_by=user).order_by('-created_at')
+    target_username = request.GET.get('user')
+    
+    if target_username:
+        target_user = get_object_or_404(User, username=target_username)
+        profile, created = Profile.objects.get_or_create(user=target_user)
+        problems = Problem.objects.filter(created_by=target_user)
+        solutions = Solution.objects.filter(created_by=target_user)
+        form = None
+    else:
+        target_user = request.user
+        profile, created = Profile.objects.get_or_create(user=target_user)
+        problems = Problem.objects.filter(created_by=target_user)
+        solutions = Solution.objects.filter(created_by=target_user)
+        if request.method == 'POST':
+            form = ProfileForm(request.POST, request.FILES, instance=profile)
+            if form.is_valid():
+                form.save()
+                print(f"Profile picture updated for {target_user.username}")
+                return redirect('profile')
+        else:
+            form = ProfileForm(instance=profile)
+    
     return render(request, 'profile.html', {
-        'user': user,
-        'solutions': user_solutions,
-        'problems_created': problems_created,
-        'problems_solved': problems_solved,
-        'favorite_problems': favorite_problems,
+        'target_user': target_user,
+        'profile': profile,
+        'problems': problems,
+        'solutions': solutions,
+        'form': form,
     })
 
-@login_required
 def rate_problem(request, problem_id):
     problem = get_object_or_404(Problem, id=problem_id)
     print(f"Rate problem {problem_id} by {request.user.username}")
@@ -635,7 +639,6 @@ def rate_problem(request, problem_id):
     print("Not a POST request")
     return JsonResponse({'error': 'Invalid request'}, status=400)
 
-@login_required
 def toggle_favorite(request, problem_id):
     problem = get_object_or_404(Problem, id=problem_id)
     if request.method == 'POST':
@@ -651,11 +654,10 @@ def toggle_favorite(request, problem_id):
         return JsonResponse({'is_favorited': is_favorited})
     return JsonResponse({'error': 'Invalid request'}, status=400)
 
-@login_required
 def delete_problem(request, problem_id):
     problem = get_object_or_404(Problem, id=problem_id)
     if request.user != problem.created_by:
-        return redirect('problem_detail', problem_id=problem.id)  # Unauthorized users redirected back
+        return redirect('problem_detail', problem_id=problem.id)
     if request.method == 'POST':
         problem.delete()
         return redirect('problem_list')

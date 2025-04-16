@@ -1,23 +1,73 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block content %}
-    <h2>{{ user.username }}'s Profile</h2>
-    <p><strong>Problems Created:</strong> {{ problems_created }}</p>
-    <p><strong>Problems Solved:</strong> {{ problems_solved }}</p>
+    <div class="profile-card">
+        <h1>{{ target_user.username }}'s Profile</h1>
+        <img src="{% if profile.profile_picture %}{{ profile.profile_picture.url }}{% else %}{% static 'problems/default_profile.png' %}{% endif %}" alt="{{ target_user.username }}'s Profile Picture" class="profile-pic-large">
+        
+        {% if form %}
+            <h2>Update Profile Picture</h2>
+            <form method="POST" enctype="multipart/form-data" class="profile-form">
+                {% csrf_token %}
+                {{ form.as_p }}
+                <button type="submit">Upload</button>
+            </form>
+        {% endif %}
 
-    <h3>Favorite Problems</h3>
-    <ul>
-    {% for fav in favorite_problems %}
-        <li><a href="{% url 'problem_detail' fav.problem.id %}">{{ fav.problem.title }}</a></li>
-    {% empty %}
-        <li>No favorite problems yet.</li>
-    {% endfor %}
-    </ul>
+        <h2>Created Problems</h2>
+        {% for problem in problems %}
+            <div class="item-card">
+                <a href="{% url 'problem_detail' problem.id %}">{{ problem.title }}</a>
+                <span class="meta">({{ problem.difficulty }})</span>
+            </div>
+        {% empty %}
+            <p>No problems created.</p>
+        {% endfor %}
 
-    <h3>Solutions</h3>
-    {% for solution in solutions %}
-        <p><strong>{{ solution.problem.title }}</strong> ({{ solution.created_at }}):</p>
-        <pre>{{ solution.code }}</pre>
-    {% empty %}
-        <p>No solutions submitted yet.</p>
-    {% endfor %}
+        <h2>Submitted Solutions</h2>
+        {% for solution in solutions %}
+            <div class="item-card">
+                <span>Solution for <a href="{% url 'problem_detail' solution.problem.id %}">{{ solution.problem.title }}</a></span>
+                <span class="meta">on {{ solution.created_at|date:"F d, Y" }}</span>
+            </div>
+        {% empty %}
+            <p>No solutions submitted.</p>
+        {% endfor %}
+    </div>
+    <style>
+        .profile-card {
+            background-color: #333333;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        .profile-pic-large {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin: 10px 0;
+            border: 2px solid #444444;
+        }
+        .profile-form {
+            margin: 20px 0;
+            max-width: 300px;
+        }
+        .profile-form p {
+            margin-bottom: 10px;
+        }
+        .item-card {
+            background-color: #2d2d2d;
+            border-radius: 6px;
+            padding: 10px;
+            margin: 10px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .meta {
+            color: #cccccc;
+            font-size: 14px;
+        }
+    </style>
 {% endblock %}

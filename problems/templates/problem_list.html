@@ -1,48 +1,263 @@
 {% extends 'base.html' %}
+{% load static %}
 {% block content %}
     <h1>Problems</h1>
     {% if user.is_authenticated %}
-        <p><a href="{% url 'create_problem' %}" style="display: inline-block; padding: 10px 20px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px;">Create Problem</a></p>
-    {% endif %}
-    
-    <form method="GET" style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
-        <div style="position: relative; display: flex; align-items: center;">
-            <select name="tag" style="padding: 8px; border: 1px solid #ccc; border-radius: 5px 0 0 5px; border-right: none;">
-                <option value="">All Tags</option>
-                {% for tag in tags %}
-                    <option value="{{ tag.name }}" {% if request.GET.tag == tag.name %}selected{% endif %}>{{ tag.name }}</option>
-                {% endfor %}
-            </select>
-            <input type="text" name="q" placeholder="Search..." value="{{ request.GET.q }}" style="padding: 8px; border: 1px solid #ccc; border-radius: 0; margin-left: -1px; flex-grow: 1;">
-            <button type="submit" style="padding: 8px 15px; background-color: #007BFF; color: white; border: none; border-radius: 0 5px 5px 0; cursor: pointer;">Search</button>
+        <div class="filter-actions">
+            <form method="GET" action="{% url 'problem_list' %}" class="filter-form">
+                <input type="hidden" name="q" value="{{ search_query|default_if_none:'' }}">
+                <input type="hidden" name="tags" value="{{ selected_tags|join:','|default_if_none:'' }}">
+                <label class="filter-label">
+                    <input type="checkbox" name="liked" value="true" {% if request.GET.liked == 'true' %}checked{% endif %} onchange="this.form.submit()"> Liked
+                </label>
+                <label class="filter-label">
+                    <input type="checkbox" name="disliked" value="true" {% if request.GET.disliked == 'true' %}checked{% endif %} onchange="this.form.submit()"> Disliked
+                </label>
+                <label class="filter-label">
+                    <input type="checkbox" name="favorited" value="true" {% if request.GET.favorited == 'true' %}checked{% endif %} onchange="this.form.submit()"> Favorited
+                </label>
+            </form>
         </div>
-    </form>
-
-    {% if user.is_authenticated %}
-        <form method="GET" style="margin-bottom: 20px;">
-            <h3>Filter by Your Interactions:</h3>
-            <label><input type="checkbox" name="liked" {% if request.GET.liked %}checked{% endif %}> Liked</label>
-            <label style="margin-left: 15px;"><input type="checkbox" name="disliked" {% if request.GET.disliked %}checked{% endif %}> Disliked</label>
-            <label style="margin-left: 15px;"><input type="checkbox" name="favorited" {% if request.GET.favorited %}checked{% endif %}> Favorited</label>
-            <button type="submit" style="margin-left: 15px; padding: 5px 10px; background-color: #007BFF; color: white; border: none; border-radius: 5px; cursor: pointer;">Apply Filters</button>
-            <!-- Preserve search and tag filters -->
-            <input type="hidden" name="q" value="{{ request.GET.q }}">
-            <input type="hidden" name="tag" value="{{ request.GET.tag }}">
-        </form>
     {% endif %}
+    {% if search_query or selected_tags or request.GET.liked == 'true' or request.GET.disliked == 'true' or request.GET.favorited == 'true' %}
+        <div class="filter-info">
+            <p>
+                {% if search_query %}Searching for: "{{ search_query }}"{% endif %}
+                {% if selected_tags %}
+                    {% if search_query %} | {% endif %}
+                    Tags: {{ selected_tags|join:", " }}
+                {% endif %}
+                {% if request.GET.liked == 'true' %}
+                    {% if search_query or selected_tags %} | {% endif %}
+                    Liked: Yes
+                {% endif %}
+                {% if request.GET.disliked == 'true' %}
+                    {% if search_query or selected_tags or request.GET.liked == 'true' %} | {% endif %}
+                    Disliked: Yes
+                {% endif %}
+                {% if request.GET.favorited == 'true' %}
+                    {% if search_query or selected_tags or request.GET.liked == 'true' or request.GET.disliked == 'true' %} | {% endif %}
+                    Favorited: Yes
+                {% endif %}
+                <a href="{% url 'problem_list' %}" class="clear-filters">Clear Filters</a>
+            </p>
+        </div>
+    {% endif %}
+    <p class="create-container"><a href="{% url 'create_problem' %}" class="create-link">Create a New Problem</a></p>
+    {% for problem in problems %}
+        <div class="problem-card">
+            <a href="{% url 'problem_detail' problem.id %}" class="card-link"></a>
+            <div class="card-content">
+                <h2><a href="{% url 'problem_detail' problem.id %}">{{ problem.title }}</a></h2>
+                <p>{{ problem.description }}</p>
 
-    <ul>
-        {% for problem in problems %}
-            <li style="margin-bottom: 15px;">
-                <a href="{% url 'problem_detail' problem.id %}">{{ problem.title }}</a> 
-                ({{ problem.difficulty }}) - 
-                Created by <a href="{% url 'profile' %}?user={{ problem.created_by.username }}">{{ problem.created_by.username }}</a> 
-                on {{ problem.created_at|date:"Y-m-d" }} - 
-                Likes: {{ problem.get_likes_count }} | Dislikes: {{ problem.get_dislikes_count }} | 
-                Attempts: {{ problem.attempt_count }} | Solved: {{ problem.solve_count }}
-            </li>
-        {% empty %}
-            <li>No problems found.</li>
-        {% endfor %}
-    </ul>
+                <div class="meta-row">
+                    <div class="meta-item">
+                        <span class="meta">Difficulty: {{ problem.difficulty|capfirst }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta">Likes: {{ problem.likes }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta">Dislikes: {{ problem.dislikes }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta">Solved: {{ problem.solved_by.count }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta">Attempted: {{ problem.attempted_by.count }}</span>
+                    </div>
+                </div>
+                <div class="meta-item">
+                    <span class="meta">Tags: {% for tag in problem.tags.all %}{{ tag.name }}{% if not forloop.last %}, {% endif %}{% empty %}None{% endfor %}</span>
+                </div>
+                <div class="user-container">
+                    <span class="meta">Created by:</span>
+                    <a href="{% url 'profile' %}?user={{ problem.created_by.username }}" class="user-link">
+                        <img src="{% if problem.created_by.profile and problem.created_by.profile.profile_picture %}{{ problem.created_by.profile.profile_picture.url }}{% else %}{% static 'problems/default_profile.png' %}{% endif %}" alt="{{ problem.created_by.username }}'s Profile Picture" class="profile-pic">
+                        {{ problem.created_by.username }}
+                    </a>
+                </div>
+                {% if user.is_authenticated and user == problem.created_by %}
+                    <div class="actions">
+                        <form action="{% url 'delete_problem' problem.id %}" method="post" style="display: inline;" onsubmit="event.stopPropagation();">
+                            {% csrf_token %}
+                            <button type="submit" class="delete-btn" onclick="event.stopPropagation(); return confirm('Are you sure you want to delete this problem?');">Delete</button>
+                        </form>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    {% empty %}
+        <p>No problems available.</p>
+    {% endfor %}
+    <style>
+        .problem-card {
+            position: relative;
+            background-color: #333333;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s;
+        }
+        .problem-card:hover {
+            transform: translateY(-2px);
+        }
+        .card-link {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        .card-content {
+            position: relative;
+            z-index: 2;
+            pointer-events: none;
+        }
+        .card-content a, .card-content .actions {
+            pointer-events: auto;
+        }
+        .problem-card h2 {
+            font-size: 20px;
+            margin-bottom: 10px;
+        }
+        .meta-row {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .meta-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .meta {
+            font-size: 14px;
+            color: #cccccc;
+        }
+        .user-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 15px;
+            justify-content: flex-end;
+        }
+        .user-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #cccccc;
+            text-decoration: none;
+            font-size: 16px;
+        }
+        .user-link:hover {
+            color: #ffffff;
+            text-decoration: underline;
+        }
+        .profile-pic {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #444444;
+            vertical-align: middle;
+        }
+        .actions {
+            margin-top: 10px;
+            display: flex;
+            gap: 15px;
+        }
+        .actions .delete-btn {
+            background-color: #ffffff;
+            color: #000000;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+        .actions .delete-btn:hover {
+            background-color: #cc6666;
+        }
+        .create-link {
+            display: inline-block;
+            padding: 8px 16px;
+            background-color: #333333;
+            border-radius: 6px;
+            transition: background-color 0.2s;
+            color: #cccccc;
+        }
+        .create-container {
+            margin-bottom: 20px;
+        }
+        .create-link:hover {
+            background-color: #444444;
+            text-decoration: none;
+            color: #ffffff;
+        }
+        .filter-info {
+            background-color: #2d2d2d;
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #444444;
+            margin-bottom: 20px;
+        }
+        .filter-info p {
+            margin: 0;
+            font-size: 14px;
+        }
+        .clear-filters {
+            color: #55aa55;
+            margin-left: 10px;
+        }
+        .clear-filters:hover {
+            text-decoration: underline;
+        }
+        .filter-actions {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+        .filter-form {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .filter-label {
+            font-size: 14px;
+            color: #cccccc;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .filter-label input[type="checkbox"] {
+            accent-color: #55aa55;
+        }
+        @media (max-width: 600px) {
+            .meta-row {
+                margin-top: 30px;
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+            .meta-item {
+                flex-direction: row;
+                flex-wrap: wrap;
+            }
+            .user-container {
+                justify-content: flex-start;
+            }
+            .choices__item--selectable:hover {
+                background-color: #6f6f6f !important;
+                color: #ffffff !important;
+            }
+        }
+    </style>
 {% endblock %}
