@@ -43,7 +43,12 @@
             </p>
         </div>
     {% endif %}
+    {% if user.is_authenticated %}
+
     <p class="create-container"><a href="{% url 'create_problem' %}" class="create-link">Create a New Problem</a></p>
+
+    {% endif %}
+    
     {% for problem in problems %}
         <div class="problem-card">
             <a href="{% url 'problem_detail' problem.id %}" class="card-link"></a>
