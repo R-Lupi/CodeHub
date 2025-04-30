@@ -223,23 +223,77 @@ def problem_list(request):
 
 def problem_detail(request, problem_id):
     problem = get_object_or_404(Problem, id=problem_id)
-    solutions = Solution.objects.filter(problem=problem, created_by=request.user) if request.user.is_authenticated else []
-    other_solutions = Solution.objects.filter(problem=problem).exclude(created_by=request.user) if request.user.is_authenticated else Solution.objects.filter(problem=problem)
-    user_solution = Solution.objects.filter(problem=problem, created_by=request.user).order_by('-created_at').first()
-    initial_code = user_solution.code if user_solution else problem.function_header
+    
+    # Get user-specific data only if authenticated
+    user_rating = {'vote': 0}  # Default value
+    user_solution = None
+    solutions = []
+    is_favorited = False
+    
+    if request.user.is_authenticated:
+        user_rating = problem.ratings.filter(user=request.user).first() or {'vote': 0}
+        user_solution = Solution.objects.filter(problem=problem, created_by=request.user).order_by('-created_at').first()
+        solutions = Solution.objects.filter(problem=problem, created_by=request.user).order_by('-created_at')
+        is_favorited = problem.favorited_by.filter(user=request.user).exists()
+    
+    # Get other users' solutions (exclude current user's solutions only if authenticated)
+    if request.user.is_authenticated:
+        other_solutions = Solution.objects.filter(problem=problem).exclude(created_by=request.user).order_by('-created_at')
+    else:
+        other_solutions = Solution.objects.filter(problem=problem).order_by('-created_at')
+    
+    # Get likes and dislikes
     likes = problem.ratings.filter(vote=1).count()
     dislikes = problem.ratings.filter(vote=-1).count()
-    return render(request, 'problem_detail.html', {
+    
+    # Prepare context
+    context = {
         'problem': problem,
-        'solutions': solutions,
-        'other_solutions': other_solutions,
-        'function_header': problem.function_header,
-        'code': initial_code,
-        'input_vars': problem.input_vars,
-        'return_type': problem.return_type,
         'likes': likes,
         'dislikes': dislikes,
-    })
+        'user_rating': user_rating,
+        'solutions': solutions,
+        'other_solutions': other_solutions,
+        'is_favorited': is_favorited,
+        'user_solution': user_solution,
+        'function_header': problem.function_header,
+        'code': user_solution.code if user_solution else None,
+        'input_vars': problem.input_vars,
+        'return_type': problem.return_type,
+        'results': None,
+        'all_tests_passed': False,
+    }
+    
+    # Handle solution submission
+    if request.method == 'POST' and ('run' in request.POST or 'submit' in request.POST):
+        if not request.user.is_authenticated:
+            messages.error(request, "You must be logged in to submit a solution.")
+            return redirect('login')
+        
+        code = request.POST.get('code')
+        if not code:
+            context['error'] = "Solution code cannot be empty."
+        else:
+            # Process the solution (run tests or submit)
+            # This part depends on your existing logic for running tests or submitting
+            # For now, I'll assume you have a function to handle this
+            results, all_passed = run_tests(problem, code)  # Placeholder; replace with actual logic
+            context['results'] = results
+            context['all_tests_passed'] = all_passed
+            
+            if 'submit' in request.POST and all_passed:
+                solution = Solution.objects.create(
+                    problem=problem,
+                    created_by=request.user,
+                    code=code,
+                    status='Accepted' if all_passed else 'Failed'
+                )
+                if all_passed:
+                    problem.solved_by.add(request.user)
+                problem.attempted_by.add(request.user)
+                return redirect('problem_detail', problem_id=problem.id)
+    
+    return render(request, 'problem_detail.html', context)
 
 def create_problem(request):
     if request.method == 'POST':

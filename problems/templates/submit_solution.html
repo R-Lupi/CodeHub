@@ -36,13 +36,15 @@
         // Enhanced indentation support for Tab and Enter in code textarea
         document.querySelector('textarea[name="code"]').addEventListener('keydown', function(e) {
             if (e.key === 'Tab') {
-                e.preventDefault();
+                e.preventDefault(); // Prevent default tab behavior (focus shift)
+                e.stopPropagation(); // Stop event from bubbling up
                 const start = this.selectionStart;
                 const end = this.selectionEnd;
                 const value = this.value;
                 const indent = '    '; // 4 spaces
                 this.value = value.substring(0, start) + indent + value.substring(end);
                 this.selectionStart = this.selectionEnd = start + indent.length;
+                this.focus(); // Explicitly keep focus on the textarea
             } else if (e.key === 'Enter') {
                 e.preventDefault();
                 const start = this.selectionStart;

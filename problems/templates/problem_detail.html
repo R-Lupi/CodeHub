@@ -111,7 +111,7 @@
                 <div class="solution-item">
                     <p class="meta">Submitted by: 
                         <a href="{% url 'profile' %}?user={{ solution.created_by.username }}" class="user-link">
-                            <img src="{% if solution.created_by.profile and solution.created_by.profile.profile_picture %}{{ solution.created_by.profile.profile_picture.url }}{% else %}{% static 'problems/default_profile.png' %}{% endif %}" alt="{{ solution.created_by.username }}'s Profile Picture" class="profile-pic">
+                            <img src="{% if solution.created_by.profile and solution.created_by.profile_picture %}{{ solution.created_by.profile.profile_picture.url }}{% else %}{% static 'problems/default_profile.png' %}{% endif %}" alt="{{ solution.created_by.username }}'s Profile Picture" class="profile-pic">
                             {{ solution.created_by.username }}
                         </a>
                     </p>
@@ -186,10 +186,46 @@
             });
         }
 
-        // Set initial button states on page load
+        // Set initial button states and handle textarea indentation
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('like-btn').classList.toggle('active', currentVote === 1);
             document.getElementById('dislike-btn').classList.toggle('active', currentVote === -1);
+
+            // Add Tab and Enter key handling for solution textarea
+            const solutionTextarea = document.getElementById('solution-textarea');
+            if (solutionTextarea) {
+                solutionTextarea.addEventListener('keydown', function(e) {
+                    if (e.key === 'Tab') {
+                        e.preventDefault(); // Prevent default tab behavior (focus shift)
+                        e.stopPropagation(); // Stop event from bubbling up
+                        const start = this.selectionStart;
+                        const end = this.selectionEnd;
+                        const value = this.value;
+                        const indent = '    '; // 4 spaces
+                        this.value = value.substring(0, start) + indent + value.substring(end);
+                        this.selectionStart = this.selectionEnd = start + indent.length;
+                        this.focus(); // Explicitly keep focus on the textarea
+                    } else if (e.key === 'Enter') {
+                        e.preventDefault(); // Prevent default enter behavior
+                        const start = this.selectionStart;
+                        const end = this.selectionEnd;
+                        const value = this.value;
+                        const beforeCursor = value.substring(0, start);
+                        const afterCursor = value.substring(end);
+                        const lastLine = beforeCursor.split('\n').slice(-1)[0];
+                        const indentMatch = lastLine.match(/^\s*/)[0]; // Get leading whitespace
+                        let newIndent = indentMatch;
+
+                        // Add extra indent if the last line ends with a colon (e.g., loop or block start)
+                        if (lastLine.trim().endsWith(':')) {
+                            newIndent += '    '; // Add 4 more spaces
+                        }
+
+                        this.value = beforeCursor + '\n' + newIndent + afterCursor;
+                        this.selectionStart = this.selectionEnd = start + 1 + newIndent.length;
+                    }
+                });
+            }
         });
     </script>
     {% endif %}
@@ -258,8 +294,7 @@
             color: #ffffff;
         }
         .rating-actions .delete-btn {
-            background-color: #ffffff;
-            color: #000000
+            background-color: #aa5555;
         }
         .rating-actions .delete-btn:hover {
             background-color: #cc6666;
