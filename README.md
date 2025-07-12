@@ -1,6 +1,6 @@
 # CodeHub
 
-Welcome to **CodeHub**, a Django-based web application designed to help users solve coding problems, track their progress, and engage with a community of learners. This project includes features like problem-solving with test cases, user authentication, favoriting problems, and solution submission with real-time testing using Docker.
+Welcome to **CodeHub**, a Django-based web application designed to help users solve coding problems, track their progress, and engage with a community of learners. This project includes features like problem-solving with test cases, user authentication, favoriting problems, and solution submission with real-time testing using Docker. This was completed over the course of half a semester as part of my undergraduate CS studies.
 
 ## Table of Contents
 - [Overview](#overview)
